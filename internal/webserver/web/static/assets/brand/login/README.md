@@ -39,7 +39,7 @@ Eight original PNGs, original filenames and SHA-256 values:
 `docs/images/login-expansion-2026-11-02/`.
 These artworks were supplied in the project’s `temp/` directory; generation tools
 and prompts were not provided. Original bytes are preserved in the archive.
-The complete catalog now has 21 images, with linked-pair still the fallback.
+That expansion brought the catalog to 21 images; linked-pair remained the fallback.
 
 Exports use the same 1280 × 1056 centered fit and WebP method 6.
 Seven use quality 82. The detailed cube uses quality 80 to stay below 300 KiB;
@@ -55,3 +55,24 @@ all eight are below that target and the 400 KiB catalog limit.
 | matrix-multichannel-v1.webp | 192180 | 82 |
 | memory-matrix-v1.webp | 170776 | 82 |
 | optical-pulses-v1.webp | 130828 | 82 |
+
+## User-provided chain expansion (2026-11-02, second batch)
+
+Seven original PNGs, original filenames and SHA-256 values are preserved in
+`docs/images/login-expansion-2026-11-02-batch2/`. They were supplied through the
+project's `temp/` directory; no generation prompts or further provenance were
+provided. The complete catalog now contains 28 images. Existing entries and the
+linked-pair fallback are unchanged.
+
+All seven exports use 1280 × 1056 centered fit, WebP quality 82, method 6,
+and remain below the 300 KiB target and 400 KiB catalog limit.
+
+| File | Bytes | Quality |
+| --- | ---: | ---: |
+| stepped-link-pair-v1.webp | 108208 | 82 |
+| vertical-link-pair-v1.webp | 42986 | 82 |
+| diamond-link-weave-v1.webp | 96960 | 82 |
+| stepped-link-chain-v1.webp | 94998 | 82 |
+| infinity-link-loop-v1.webp | 89866 | 82 |
+| rising-link-chain-v1.webp | 92868 | 82 |
+| diamond-link-pair-v1.webp | 98550 | 82 |

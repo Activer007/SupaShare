@@ -8,6 +8,16 @@ Overview of all changes
 -----------------------
 
 
+v2.16.2 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Expand the login illustration catalog from 21 to 28 entries with seven
+  user-provided images. Archive the original PNGs and their provenance, and
+  ship only optimized, versioned WebP resources in the embedded application.
+  Keep the existing selection, retry, fallback and narrow-window behavior.
+* Ignore the repository-root temporary image intake directory to prevent
+  accidental staging; keep original artwork in its documented archive.
+
 v2.16.1 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

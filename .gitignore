@@ -19,3 +19,6 @@ custom/
 *.secret
 gokapi-cli
 gokapi-cli.json
+
+# Temporary artwork intake; originals are archived under docs/images.
+/temp/
