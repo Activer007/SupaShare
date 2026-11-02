@@ -5,7 +5,7 @@
           {{if .FooterText}}<p class="footer-note">{{.FooterText}}</p>{{end}}
           <p class="footer-meta">
             {{range .FooterLinks}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Text}}</a><span class="footer-separator" aria-hidden="true">·</span>{{end}}
-            <span>{{.T "footer.poweredBy"}} <a href="https://github.com/Activer007/SupaShare" target="_blank" rel="noopener noreferrer">SupaShare v{{template "version"}}</a></span>
+            <span>{{.T "footer.poweredBy"}} <a href="https://github.com/Activer007/SupaShare" target="_blank" rel="noopener noreferrer">SupaShare V{{if .ShowFullVersion}}{{template "version"}}{{else}}{{template "version_major"}}{{end}}</a></span>
           </p>
   </footer>
 </div>
