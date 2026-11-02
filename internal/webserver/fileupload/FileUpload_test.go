@@ -62,7 +62,7 @@ func TestParseConfig(t *testing.T) {
 	config, err = parseConfig(data)
 	test.IsNil(t, err)
 	test.IsEqualInt(t, config.AllowedDownloads, 1)
-	test.IsEqualInt(t, config.Expiry, 14)
+	test.IsEqualInt(t, config.Expiry, 5)
 	test.IsEqualBool(t, config.UnlimitedTime, false)
 	test.IsEqualBool(t, config.UnlimitedDownload, false)
 

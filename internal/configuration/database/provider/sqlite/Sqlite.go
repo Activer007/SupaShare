@@ -65,7 +65,7 @@ func (p DatabaseProvider) Upgrade(currentDbVersion int) {
 			PRIMARY KEY("id")
 		);`)
 		helper.Check(err)
-		grantUploadPerm := environment.New().PermRequestGrantedByDefault
+		grantUploadPerm := environment.New().GrantFileRequestsOnLegacyUpgrade()
 		for _, user := range p.GetAllUsers() {
 			if grantUploadPerm || user.IsAdmin() {
 				user.GrantPermission(models.UserPermGuestUploads)

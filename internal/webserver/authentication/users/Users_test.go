@@ -17,14 +17,17 @@ func TestCreate(t *testing.T) {
 	testconfiguration.Create(false)
 	configuration.Load()
 	configuration.ConnectDatabase()
-	defer testconfiguration.Delete()
+	t.Cleanup(testconfiguration.Delete)
+	t.Cleanup(configuration.Load)
+	t.Setenv("GOKAPI_GUEST_UPLOAD_BY_DEFAULT", "true")
+	configuration.Load()
 
 	t.Run("Username too short", func(t *testing.T) {
 		_, err := Create("a")
 		test.IsEqualBool(t, errors.Is(err, ErrorNameToShort), true)
 	})
 
-	t.Run("Successfully create user without default permissions", func(t *testing.T) {
+	t.Run("Successfully create user with collection permission only", func(t *testing.T) {
 		userName := "testuser1"
 		user, err := Create(userName)
 
@@ -32,8 +35,7 @@ func TestCreate(t *testing.T) {
 		test.IsEqualString(t, user.Name, userName)
 		test.IsEqualInt(t, int(user.UserLevel), int(models.UserLevelUser))
 
-		// Check that guest upload permission was NOT granted
-		test.IsEqualBool(t, user.HasPermission(models.UserPermGuestUploads), false)
+		test.IsEqualInt(t, int(user.Permissions), int(models.UserPermGuestUploads))
 		test.IsEqualString(t, user.Password, "")
 		test.IsEqualBool(t, user.ResetPassword, false)
 	})
@@ -47,6 +49,47 @@ func TestCreate(t *testing.T) {
 		_, err = Create(userName)
 		test.IsEqualBool(t, errors.Is(err, ErrorUserExists), true)
 	})
+}
+
+func TestCreateCollectionPermissionPolicy(t *testing.T) {
+	testconfiguration.Create(false)
+	configuration.Load()
+	configuration.ConnectDatabase()
+	t.Cleanup(testconfiguration.Delete)
+	t.Cleanup(configuration.Load)
+	for _, enabled := range []string{"true", "false"} {
+		t.Run(enabled, func(t *testing.T) {
+			t.Cleanup(configuration.Load)
+			t.Setenv("GOKAPI_GUEST_UPLOAD_BY_DEFAULT", enabled)
+			configuration.Load()
+			for name, create := range map[string]func(string) (models.User, error){
+				"external": Create,
+				"internal": func(name string) (models.User, error) {
+					user, _, err := CreateWithTemporaryPassword(name)
+					return user, err
+				},
+			} {
+				user, err := create("policy-" + name + "-" + enabled)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := models.UserPermissionNone
+				if enabled == "true" {
+					want = models.UserPermGuestUploads
+				}
+				if user.UserLevel != models.UserLevelUser || user.Permissions != want {
+					t.Fatalf("%s user rank/permissions = %d/%d, want ordinary/%d", name, user.UserLevel, user.Permissions, want)
+				}
+				user.RemovePermission(models.UserPermGuestUploads)
+				database.SaveUser(user, false)
+				configuration.Load()
+				stored, ok := database.GetUser(user.Id)
+				if !ok || stored.Permissions != models.UserPermissionNone {
+					t.Fatal("reloading configuration must not re-grant a revoked permission")
+				}
+			}
+		})
+	}
 }
 
 func TestCreateWithTemporaryPassword(t *testing.T) {

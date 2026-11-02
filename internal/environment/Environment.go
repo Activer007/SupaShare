@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"strconv"
 
-	envParser "github.com/caarlos0/env/v6"
 	"github.com/Activer007/SupaShare/internal/environment/deprecation"
 	"github.com/Activer007/SupaShare/internal/environment/flagparser"
 	"github.com/Activer007/SupaShare/internal/helper"
+	envParser "github.com/caarlos0/env/v6"
 )
 
 // DefaultPort for the webserver
@@ -91,8 +91,8 @@ type Environment struct {
 	MinFreeSpaceMB int `env:"MIN_FREE_SPACE" envDefault:"400" onlyPositive:"true"`
 	// Sets the minimum password length
 	MinLengthPassword int `env:"MIN_LENGTH_PASSWORD" envDefault:"8" minValue:"6"`
-	// Allows all users by default to create file requests, if set to true
-	PermRequestGrantedByDefault bool `env:"GUEST_UPLOAD_BY_DEFAULT" envDefault:"false"`
+	// Allows newly created users to create file requests, if set to true
+	PermRequestGrantedByDefault bool `env:"GUEST_UPLOAD_BY_DEFAULT" envDefault:"true"`
 	// Sets a list of trusted proxies. If set, the webserver will trust the IP addresses sent
 	// by these proxies with the X-Forwarded-For and X-REAL-IP header
 	// List is comma separated; entries can be fixed IPs ("10.0.0.1, 10.0.0.2")
@@ -126,6 +126,14 @@ type Environment struct {
 // IsParsed returns true if the env variables have been parsed
 func (e *Environment) IsParsed() bool {
 	return e.isSet
+}
+
+// GrantFileRequestsOnLegacyUpgrade keeps pre-file-request database upgrades
+// opt-in even though newly created accounts now receive the permission by default.
+// Reuse the parsed value; an unset or empty variable never backfills old users.
+func (e Environment) GrantFileRequestsOnLegacyUpgrade() bool {
+	value, explicit := os.LookupEnv("GOKAPI_GUEST_UPLOAD_BY_DEFAULT")
+	return explicit && value != "" && e.PermRequestGrantedByDefault
 }
 
 // ValidateReceiveLimits rejects invalid explicit reception capacities. Legacy

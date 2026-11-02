@@ -12,7 +12,7 @@ Start sharing quickly, let contributors submit through a collection link without
 and deliver multiple files through one list with individual downloads for a convenient handoff.
 English and Simplified Chinese are built in.
 
-**Source version 2.16.3** (not yet released) · Published Linux **amd64/arm64** server binaries and checksums:
+**Source version 2.16.4** (not yet released) · Published Linux **amd64/arm64** server binaries and checksums:
 [Releases, currently v2.16.0](https://github.com/Activer007/SupaShare/releases).
 Docker deployments build the image from this repository.
 

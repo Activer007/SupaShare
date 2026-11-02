@@ -152,7 +152,7 @@ function addFileProgress(file) {
 
 function setUploadDefaults() {
     let defaultDownloads = getLocalStorageWithDefault("defaultDownloads", 1);
-    let defaultExpiry = getLocalStorageWithDefault("defaultExpiry", 14);
+    let defaultExpiry = getLocalStorageWithDefault("defaultExpiry", 5);
     let defaultPassword = getLocalStorageWithDefault("defaultPassword", "");
     let defaultUnlimitedDownloads = getLocalStorageWithDefault("defaultUnlimitedDownloads", false) === "true";
     let defaultUnlimitedTime = getLocalStorageWithDefault("defaultUnlimitedTime", false) === "true";
@@ -427,7 +427,7 @@ function showEditModal(filename, id, downloads, expiry, password, unlimitedown, 
     }
 
     if (unlimitedtime) {
-        document.getElementById("mi_edit_expiry").value = add14DaysIfBeforeCurrentTime(expiry);
+        document.getElementById("mi_edit_expiry").value = defaultExpiryIfPast(expiry);
         document.getElementById("mi_edit_expiry").disabled = true;
         document.getElementById("mc_expiry").checked = false;
         calendarInstance._input.disabled = true;
@@ -480,11 +480,11 @@ function selectTextForPw(input) {
     }
 }
 
-function add14DaysIfBeforeCurrentTime(unixTimestamp) {
+function defaultExpiryIfPast(unixTimestamp) {
     let currentTime = Date.now();
     let timestampInMilliseconds = unixTimestamp * 1000;
     if (timestampInMilliseconds < currentTime) {
-        let newTimestamp = currentTime + (14 * 24 * 60 * 60 * 1000);
+        let newTimestamp = currentTime + (5 * 24 * 60 * 60 * 1000);
         return Math.floor(newTimestamp / 1000);
     } else {
         return unixTimestamp;
