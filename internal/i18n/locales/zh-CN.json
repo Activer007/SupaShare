@@ -242,6 +242,8 @@
   "table.last": "末页",
   "table.sortAscending": "：点击按升序排列",
   "table.sortDescending": "：点击按降序排列",
+  "files.dropToUpload": "松开即可上传",
+  "files.dropUsesRules": "将使用上方设置上传这些文件。",
   "dropzone.unsupported": "当前浏览器不支持拖放上传。",
   "dropzone.fileTooBig": "文件过大（{{filesize}} MiB），上限为 {{maxFilesize}} MiB。",
   "dropzone.invalidType": "不支持上传此类型的文件。",

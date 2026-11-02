@@ -242,6 +242,8 @@
   "table.last": "Last",
   "table.sortAscending": ": activate to sort column ascending",
   "table.sortDescending": ": activate to sort column descending",
+  "files.dropToUpload": "Release to upload",
+  "files.dropUsesRules": "These files will use the upload settings above.",
   "dropzone.unsupported": "Your browser does not support drag and drop uploads.",
   "dropzone.fileTooBig": "File is too big ({{filesize}}MiB). Max filesize: {{maxFilesize}}MiB.",
   "dropzone.invalidType": "You can't upload files of this type.",

@@ -8,6 +8,14 @@ Overview of all changes
 -----------------------
 
 
+v2.16.6 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Highlight the upload area and show a release-to-upload prompt when files enter.
+  Keep the feedback stable while moving across nested elements, and restore the
+  normal state when files leave or are dropped. Respect reduced-motion settings
+  while reusing the existing upload flow.
+
 v2.16.5 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

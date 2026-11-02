@@ -22,6 +22,11 @@ function initDropzone() {
         dictCancelUploadConfirmation: t('dropzone.cancelConfirm'),
         dictRemoveFile: t('dropzone.remove'),
         dictMaxFilesExceeded: t('dropzone.tooMany'),
+        dragenter: function(event) { this.uploadDragFeedback.enter(event); },
+        dragover: function(event) { this.uploadDragFeedback.over(event); },
+        dragleave: function() { this.uploadDragFeedback.leave(); },
+        drop: function() { this.uploadDragFeedback.reset(); },
+        dragend: function() { this.uploadDragFeedback.reset(); },
         createImageThumbnails: false,
         // Dropzone's shared admission hook covers selection, drag/drop and paste.
         accept: function(file, done) {
@@ -36,6 +41,7 @@ function initDropzone() {
         },
         init: function() {
             dropzoneObject = this;
+            this.uploadDragFeedback = createUploadDragFeedback(this);
             this.on("addedfile", file => {
                 file.upload.uuid = getUuid();
                 saveUploadDefaults();
