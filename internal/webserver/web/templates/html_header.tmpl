@@ -1,3 +1,4 @@
+{{define "brand_name"}}{{if eq . "SupaShare"}}<img class="workspace-brand-image" src="./assets/brand/supashare-logo-v1.webp" width="1000" height="203" alt="SupaShare" decoding="async">{{else}}{{.}}{{end}}{{end}}
 {{define "header"}}<!doctype html>
 <html lang="{{.UI.Language}}" class="h-100">
   <head>
@@ -9,10 +10,10 @@
 	<script src="./assets/dist/js/jquery.min.js"></script>
 	<script src="./assets/dist/js/bootstrap.bundle.min.js"></script>
 	<link href="./assets/dist/css/bootstrap.min.css" rel="stylesheet">
-	<link rel="apple-touch-icon" sizes="180x180" href="./favicon-apple-touch-icon.png">
-	<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
-	<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
-	<link rel="manifest" href="./site.webmanifest">
+	<link rel="apple-touch-icon" sizes="180x180" href="./favicon-apple-touch-icon.png?v={{template "css_main"}}">
+	<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v={{template "css_main"}}">
+	<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png?v={{template "css_main"}}">
+	<link rel="manifest" href="./site.webmanifest?v={{template "css_main"}}">
         <link href="./css/min/gokapi.min.{{ template "css_main"}}.css" rel="stylesheet">
 	<link href="./assets/dist/icons/bootstrap-icons.min.css" rel="stylesheet">
 	<script>window.gokapiMessages = {{.UI.Messages}};</script>
@@ -51,7 +52,7 @@
   <div class="d-flex w-100 min-vh-100 p-3 mx-auto flex-column admin-layout">
       <header class="masthead workspace-header">
         <div class="workspace-navigation">
-          <a class="workspace-brand" href="./admin" title="{{.PublicName}}">{{.PublicName}}</a>
+          <a class="workspace-brand{{if eq .PublicName "SupaShare"}} workspace-brand-logo{{end}}" href="./admin" title="{{.PublicName}}">{{template "brand_name" .PublicName}}</a>
           <nav class="nav nav-masthead workspace-primary-nav" aria-label="{{.UI.T "nav.main"}}">
             <a class="nav-link {{ if eq .ActiveView 0}}active{{ end }}" {{if eq .ActiveView 0}}aria-current="page"{{end}} href="./admin"><i class="bi bi-folder" aria-hidden="true"></i><span>{{.UI.T "nav.files"}}</span></a>
             {{ if .ActiveUser.HasPermissionCreateFileRequests }}
@@ -85,7 +86,7 @@
 {{ else }}
   <div class="d-flex w-100 mx-auto flex-column public-layout">
     <header class="public-header">
-      <a class="workspace-brand" href="./index">{{.PublicName}}</a>
+      <a class="workspace-brand{{if eq .PublicName "SupaShare"}} workspace-brand-logo{{end}}" href="./index" title="{{.PublicName}}">{{template "brand_name" .PublicName}}</a>
       {{template "language_switch" .UI}}
     </header>
     <main class="public-main">

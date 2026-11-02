@@ -8,6 +8,17 @@ Overview of all changes
 -----------------------
 
 
+v2.16.3 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Adopt the selected blue/silver connection-S logo in the default SupaShare
+  public and management headers. Ship the optimized image as an embedded asset
+  with accessible alternative text; custom public names keep their text.
+* Use its matching S symbol as the default browser icon and version header
+  icon URLs to refresh caches. Preserve custom favicon overrides.
+* Archive the selected logo sources and preparation details. The comparison
+  preview script and alternate concepts are not application dependencies.
+
 v2.16.2 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

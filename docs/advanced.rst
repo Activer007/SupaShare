@@ -776,6 +776,12 @@ links alongside the existing product credit. Links accept HTTP(S) addresses or
 site-relative paths beginning with ``/``. Custom text is displayed literally;
 use bilingual text if desired. These settings survive the reconfiguration wizard.
 
+The default ``PublicName`` of ``SupaShare`` uses the built-in blue/silver
+connection-S logo in public and management page headers. A different public name
+continues to display as text, including its configured spelling. The default
+browser icon uses the matching S symbol; ``custom/favicon.png`` still overrides
+it through the existing 512 by 512 PNG customization mechanism.
+
 The product credit on public pages displays the major version (for example,
 ``SupaShare V2``). Authenticated management pages show the full version.
 Avoid adding a ``FooterLinks`` entry
