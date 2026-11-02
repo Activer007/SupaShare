@@ -10,6 +10,11 @@ import (
 )
 
 func TestUILoginArtworkCatalog(t *testing.T) {
+	var version strings.Builder
+	if err := templateFolder.ExecuteTemplate(&version, "version", nil); err != nil {
+		t.Fatal(err)
+	}
+	majorVersion, _, _ := strings.Cut(version.String(), ".")
 	for _, language := range []string{"en", "zh-CN"} {
 		response := httptest.NewRecorder()
 		view := &LoginView{PublicName: "Team", User: "<test>", IsFailedLogin: true}
@@ -17,6 +22,17 @@ func TestUILoginArtworkCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 		body := response.Body.String()
+		if strings.Contains(body, version.String()) {
+			t.Fatal("public login page must not show the full version")
+		}
+		footerStart, footerEnd := strings.Index(body, "<footer"), strings.Index(body, "</footer>")
+		if footerStart < 0 || footerEnd < footerStart {
+			t.Fatal("missing page footer")
+		}
+		footer := body[footerStart:footerEnd]
+		if !strings.Contains(footer, `>SupaShare V`+majorVersion+`</a>`) || strings.Contains(footer, version.String()) {
+			t.Fatal("footer must show only the major version")
+		}
 		for _, want := range []string{`data-retry="true"`, `aria-describedby="loginError"`, `value="&lt;test&gt;"`, `autocomplete="current-password"`, `name="csrf-token"`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("missing login contract %s", want)

@@ -143,6 +143,8 @@ func insertVersionNumbers(input string) string {
 	versionGokapi := parseGokapiVersion()
 	hashedVersion := staticAssetVersion(versionGokapi)
 	result := strings.ReplaceAll(input, "%gokapiversion%", versionGokapi)
+	majorVersion, _, _ := strings.Cut(versionGokapi, ".")
+	result = strings.ReplaceAll(result, "%gokapiversionMajor%", majorVersion)
 	result = strings.ReplaceAll(result, "%gokapiversionInt%", parseVersionAsInt(versionGokapi))
 	result = strings.ReplaceAll(result, "%jsadmin%", hashedVersion)
 	result = strings.ReplaceAll(result, "%jsdropzone%", hashedVersion)
@@ -226,6 +228,7 @@ func parseGokapiVersion() string {
 
 const templateVersions = `// File contains auto-generated values. Do not change manually
 {{define "version"}}%gokapiversion%{{end}}
+{{define "version_major"}}%gokapiversionMajor%{{end}}
 
 // Specifies the version of JS files, so that the browser doesn't
 // use a cached version, if the file has been updated

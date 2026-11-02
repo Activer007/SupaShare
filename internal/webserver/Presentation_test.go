@@ -111,6 +111,10 @@ func TestUIPublicPages(t *testing.T) {
 }
 
 func TestUIUploadManagementContexts(t *testing.T) {
+	var version strings.Builder
+	if err := templateFolder.ExecuteTemplate(&version, "version", nil); err != nil {
+		t.Fatal(err)
+	}
 	user := models.User{Id: 5, Name: "fixture", UserLevel: models.UserLevelSuperAdmin, Permissions: models.UserPermissionAll}
 	for _, language := range []string{"en", "zh-CN"} {
 		for _, name := range []string{"admin", "uploadreq"} {
@@ -124,6 +128,9 @@ func TestUIUploadManagementContexts(t *testing.T) {
 				t.Fatalf("%s %s: %v", language, name, err)
 			}
 			body := response.Body.String()
+			if !strings.Contains(body, `>SupaShare V`+version.String()+`</a>`) {
+				t.Errorf("%s %s must show the full management version", language, name)
+			}
 			for _, key := range []string{"common.delete", "common.saveChanges"} {
 				if name == "uploadreq" && key == "common.saveChanges" {
 					key = "request.deleteTitle"

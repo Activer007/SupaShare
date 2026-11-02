@@ -2,10 +2,11 @@ Login artwork maintenance
 =========================
 
 The login page uses a left-hand form and a decorative illustration on the right.
-The catalog contains 21 images: four original file-sharing illustrations,
+The catalog contains 28 images: four original file-sharing illustrations,
 nine selected mechanical, macro and abstract artworks, and eight user-provided
 data-flow and matrix illustrations archived in
-``docs/images/login-expansion-2026-11-02/``.
+``docs/images/login-expansion-2026-11-02/``, plus seven user-provided chain
+illustrations archived in ``docs/images/login-expansion-2026-11-02-batch2/``.
 Each new page load selects one entry from a local catalog. The image stays fixed
 while typing. After a failed login, the browser attempts to reuse the previous
 image ID stored in this tab's sessionStorage. No credentials are stored there.
@@ -16,6 +17,12 @@ At desktop widths of 960 CSS pixels or less the illustration is hidden and its
 request is deferred until the window becomes wider. This does not change the
 existing device-access policy. There is no slideshow, timer or third-party image
 request. Configuration-based branding, title and footer remain unchanged.
+
+The login shell uses 72 CSS pixel side gutters above 960 CSS pixels (the other
+public pages keep their existing spacing). At viewport heights of 900 CSS pixels
+or less, compact vertical spacing leaves room for the footer. The footer stays in
+normal document flow; longer notes and error states can scroll without covering
+the form.
 
 Adding an image
 ---------------

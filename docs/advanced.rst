@@ -776,6 +776,11 @@ links alongside the existing product credit. Links accept HTTP(S) addresses or
 site-relative paths beginning with ``/``. Custom text is displayed literally;
 use bilingual text if desired. These settings survive the reconfiguration wizard.
 
+The product credit on public pages displays the major version (for example,
+``SupaShare V2``). Authenticated management pages show the full version.
+Avoid adding a ``FooterLinks`` entry
+for the SupaShare repository, since the product credit already links there.
+
 The language buttons choose an explicit ``lang=en`` or ``lang=zh-CN`` parameter
 and remember it in a browser cookie. The order is URL, cookie, site default.
 Switching preserves other query parameters and the encrypted link fragment.

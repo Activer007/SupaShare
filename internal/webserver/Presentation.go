@@ -13,11 +13,12 @@ import (
 
 type pageUI struct {
 	i18n.Locale
-	Title       string
-	SiteTitle   string
-	Description string
-	FooterText  string
-	FooterLinks []models.FooterLink
+	Title           string
+	SiteTitle       string
+	Description     string
+	FooterText      string
+	FooterLinks     []models.FooterLink
+	ShowFullVersion bool
 }
 
 type pageView struct {
@@ -86,8 +87,10 @@ func renderPage(w http.ResponseWriter, r *http.Request, name string, view interf
 			label, description = data.Name, data.Size
 		}
 	}
+	adminView, isAdminView := view.(*AdminView)
 	view.setUI(pageUI{Locale: locale, Title: label + " · " + baseTitle, SiteTitle: baseTitle, Description: description,
-		FooterText: settings.FooterText, FooterLinks: settings.FooterLinks})
+		FooterText: settings.FooterText, FooterLinks: settings.FooterLinks,
+		ShowFullVersion: isAdminView && adminView.IsAdminView})
 	addNoCacheHeader(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	addPageResponsePolicy(w, name)
