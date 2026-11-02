@@ -82,10 +82,10 @@
                   <img class="upload-brand-art" src="./assets/brand/share-folder-v1.png" width="240" height="160" alt="" aria-hidden="true">
                   <div class="upload-prompt">
 {{ if .EndToEndEncryption }}
-                    <p id="uploadBoxTitle" class="mb-2 fs-5">{{$.UI.T "common.wait"}}</p>
+                    <p id="uploadBoxTitle" class="mb-2 fs-5" role="status" aria-live="polite" aria-atomic="true">{{$.UI.T "common.wait"}}</p>
                     <p id="uploadBoxSubtitle" class="mb-0 opacity-75">{{$.UI.T "files.loadingE2E"}}</p>
 {{ else }}
-                    <p id="uploadBoxTitle" class="mb-2 fs-5">{{$.UI.T "request.drop"}}</p>
+                    <p id="uploadBoxTitle" class="mb-2 fs-5" role="status" aria-live="polite" aria-atomic="true">{{$.UI.T "request.drop"}}</p>
                     <p id="uploadBoxSubtitle" class="mb-0 opacity-75">{{$.UI.T "files.selectHint"}}</p>
 {{ end }}
                   </div>
