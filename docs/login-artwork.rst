@@ -17,6 +17,12 @@ request is deferred until the window becomes wider. This does not change the
 existing device-access policy. There is no slideshow, timer or third-party image
 request. Configuration-based branding, title and footer remain unchanged.
 
+The login shell uses 72 CSS pixel side gutters above 960 CSS pixels (the other
+public pages keep their existing spacing). At viewport heights of 900 CSS pixels
+or less, compact vertical spacing leaves room for the footer. The footer stays in
+normal document flow; longer notes and error states can scroll without covering
+the form.
+
 Adding an image
 ---------------
 
