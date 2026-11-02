@@ -1,6 +1,35 @@
 # README image sources
 
-These images support the English and Chinese SupaShare READMEs.
+These images support the English and Chinese SupaShare READMEs. The current
+README gallery uses `current-ui/`; the cover remains the original brand artwork.
+
+## Current screenshots — 2026-11-02
+
+The gallery was captured from a **2.16.0 development checkout** based on master
+`4aadf84bea90d902e4272dd1445a282a1fdb3059`, with the eight-image login catalog
+expansion in this change. It is not a recapture of the published release binary.
+Chromium, DPR 1, loopback-only native macOS server, SQLite and local storage were
+used. All accounts, filenames and file contents are synthetic demonstration data.
+No real user data, passwords or API keys appear in the captures. Screenshots are
+unmodified browser captures, not generated or redrawn product mockups.
+
+| Files under `current-ui/` | Captured surface | CSS viewport |
+| --- | --- | --- |
+| `login-zh.jpg`, `login-en.jpg` | Chinese and English login, showing two of the new local illustrations | 1440 × 1000 |
+| `workspace-zh.jpg`, `workspace-en.jpg` | Personal logical quota, upload rules and three ordinary shares | 1586 × 1100, full page |
+| `collections-zh.jpg`, `collections-en.jpg` | Intake status, two selected received files, batch conversion controls and an active delivery list | 1586 × 1100, full page |
+| `delivery-zh.jpg`, `delivery-en.jpg` | Public list containing two ordinary shares and individual download actions | 1440 × 1000 |
+
+The login illustrations were selected deterministically for capture; the actual
+page continues to choose randomly from its 21-entry catalog. The new original
+artwork supplied by the user is preserved with its source filenames and SHA-256
+values in [login-expansion-2026-11-02](login-expansion-2026-11-02/README.md).
+Runtime WebP files are prepared separately from these screenshots; see
+[login artwork maintenance](../login-artwork.rst).
+
+## Cover and historical screenshots
+
+The older files remain as historical evidence and are no longer the README gallery.
 
 | File | Source |
 | --- | --- |
@@ -18,10 +47,11 @@ The screenshots were captured through the browser tool from a loopback-only, iso
 ## Refreshing the screenshots
 
 1. Build the target source version and generate its frontend/WASM assets.
-2. Run a local instance with disposable configuration/data. Use a few harmless, readable demo filenames, a demonstration administrator and an ordinary user.
-3. Capture the desktop workspace in English and Chinese after the enhanced file table and Copy link actions finish loading. Keep the application name and version visible.
-4. Open the ordinary user's permission editor without saving changes. Capture it after the modal animation settles.
-5. Save browser screenshots as JPEG, verify their contents, and update the source version above and the screenshot captions in both READMEs together.
+2. Run a loopback-only local instance with disposable configuration and data. Use harmless demo filenames and a demonstration account.
+3. Capture English and Chinese login pages with empty fields after the illustration has loaded. Record the selected illustration and source checkout.
+4. Upload a few real demo files, reload the workspace to clear temporary upload highlights, and wait for quota and file rows to load before capturing.
+5. Create a collection, submit demo files through its public link, then convert selected submissions into ordinary shares. Capture the collection and a public delivery list made from those shares.
+6. Save browser screenshots as JPEG, inspect all captures, and update this source record and both README captions together. Preserve historical screenshots under their original provenance.
 
 The screenshots show one demonstration configuration, not a default-data installation or a hosted public demo. Preserve this distinction when updating the documentation.
 

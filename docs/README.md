@@ -1,6 +1,6 @@
 # SupaShare documentation / 文档导航
 
-[中文首页](../README.md) · [English overview](../README.en.md)
+[中文首页](../README.md) · [English overview](../README.en.md) · [当前界面截图 / Screenshots](../README.md#界面截图)
 
 This directory is the documentation source for the SupaShare version in this checkout. Start with the repository README, then choose a guide below. The historical `gokapi.readthedocs.io` site belongs to the upstream project; it does not publish this repository's current documentation.
 
@@ -17,6 +17,7 @@ This directory is the documentation source for the SupaShare version in this che
 | [Changelog](changelog.rst) | SupaShare changes and inherited history / 当前项目改动和继承历史 |
 | [Troubleshooting](troubleshooting.rst) | Diagnostics / 问题排查 |
 | [Recovery runbook](security/UPLOAD-RECOVERY-RUNBOOK.md) | Conservative handling of interrupted uploads / 中断上传的核对与恢复 |
+| [Login artwork](login-artwork.rst) | Local illustration catalog and image preparation / 本地登录图集与素材维护 |
 | [UI validation](ui-development.rst) | Local developer checks / 本地开发验证 |
 
 The Sphinx source begins at [index.rst](index.rst). Image origins and refresh instructions are in [images/README.md](images/README.md).
