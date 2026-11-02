@@ -795,7 +795,7 @@ func (p *paramChunkComplete) ProcessParameter(r *http.Request) error {
 		if p.foundHeaders["expiryDays"] {
 			p.UnlimitedTime = true
 		} else {
-			p.ExpiryDays = 14
+			p.ExpiryDays = 5
 		}
 	} else {
 		if p.ExpiryDays > 100000 {

@@ -8,6 +8,16 @@ Overview of all changes
 -----------------------
 
 
+v2.16.4 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Enable file collection creation for newly created ordinary users by default.
+  Explicitly disabled defaults, existing permissions and administrator revocations
+  remain effective; old SQLite/Redis upgrades retain their previous opt-in grants.
+* Reduce the default expiry of ordinary file shares from 14 to five days in the
+  upload form and when API expiry is omitted. Preserve explicit expiry values,
+  unlimited shares, saved browser preferences and existing file records.
+
 v2.16.3 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

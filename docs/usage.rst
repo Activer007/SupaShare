@@ -27,6 +27,11 @@ Uploading new files
 
 To upload, drag and drop a file, folder or multiple files to the Upload Zone. You can also directly paste an image or text from the clipboard. If you want to change the default expiry conditions, this has to be done before uploading. For each file an entry in the table will appear with a download link.
 
+New uploads default to a 5-day expiry unless the browser has saved different
+upload preferences. Existing files keep their configured expiry. The upload API
+also defaults to 5 days when ``expiryDays`` is omitted; an explicit ``0`` keeps
+the file without a time limit.
+
 Choose *Upload files* to use the file picker, or use drag/drop and clipboard paste.
 Invalid rules expand and focus the affected field before uploading. Rule changes
 apply to new uploads; edit an existing file to change its limits. Uploaded files
@@ -78,6 +83,14 @@ General
 ----------------
 
 The File Requests page allows you to create secure, invitation-only upload links. These links enable external users to send files directly to your server without needing an account.
+
+New ordinary accounts can create file collections by default. Set
+``GOKAPI_GUEST_UPLOAD_BY_DEFAULT=false`` before creating accounts to keep this
+permission opt-in. Existing accounts retain their stored permissions, including
+any administrator revocations. For an existing account without the File Requests
+menu, an administrator can enable **Create File Requests** (``创建文件收集``) in
+the Users page's Permissions column. This grants collection creation for that
+account, without access to other users' files or management functions.
 
 .. warning::
    If end-to-end encryption (Level 3) is enabled on your server, File Requests **bypass it**. Files uploaded through a File Request link are stored without end-to-end encryption. Standard server-side encryption (Levels 1 and 2) is still applied if configured.
