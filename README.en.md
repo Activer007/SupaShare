@@ -12,8 +12,8 @@ Start sharing quickly, let contributors submit through a collection link without
 and deliver multiple files through one list with individual downloads for a convenient handoff.
 English and Simplified Chinese are built in.
 
-**Version 2.16.0** · Linux **amd64/arm64** server binaries and checksums:
-[Releases](https://github.com/Activer007/SupaShare/releases).
+**Source version 2.16.1** (not yet released) · Published Linux **amd64/arm64** server binaries and checksums:
+[Releases, currently v2.16.0](https://github.com/Activer007/SupaShare/releases).
 Docker deployments build the image from this repository.
 
 [Quick start](#quick-start) · [Screenshots](#screenshots) · [Documentation](#documentation)
@@ -79,7 +79,7 @@ and encryption keys.
 
 ## Screenshots
 
-Real desktop screenshots from the **current 2.16.0 development checkout**, captured on 2026-11-02
+Real desktop screenshots from a **2.16.0 development checkout**, captured on 2026-11-02
 using an isolated local instance and synthetic example data. See [image sources and maintenance](docs/images/README.md).
 
 **Login**: each page load selects a local illustration, which stays fixed while signing in.

@@ -8,16 +8,22 @@ Overview of all changes
 -----------------------
 
 
-Unreleased
-^^^^^^^^^^
+v2.16.1 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Expand the login artwork catalog to 13 images with nine user-selected
-  mechanical, macro and abstract illustrations, optimized as local WebP assets.
-
-* Redesign local login with a charcoal panel, bilingual tagline and four optimized
-  blue/silver illustrations. Select one local image per page load, retain it after
-  failed login when storage permits, and fall back safely on resource failure.
-  Extend the template catalog without changing selection code; see :doc:`login-artwork`.
+* Redesign local login with a charcoal panel and bilingual tagline. Select one
+  local illustration per page load, retain it after failed login when storage
+  permits, and fall back safely on resource failure. Expand the catalog to 21
+  optimized WebP images: four original, nine selected mechanical/abstract and
+  eight user-provided data-flow illustrations. See :doc:`login-artwork`.
+* Increase desktop login side gutters from 48 to 72 CSS pixels and compact the
+  vertical layout in shorter windows so footer notes remain visible. Longer
+  content and error states continue to scroll without covering the form.
+* Show only the major version in public-page product credits (SupaShare V2),
+  while authenticated management pages retain the full version.
+* Align credential copy controls and the password visibility control.
+* Make Chinese the default README, keep the English overview linked, restore
+  the cover and refresh the bilingual screenshots with documented provenance.
 
 v2.16.0 (2026-10-31)
 ^^^^^^^^^^^^^^^^^^^^
