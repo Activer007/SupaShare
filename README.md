@@ -72,14 +72,27 @@ ssh -N -L 53842:127.0.0.1:53842 user@your-server
 
 ## 界面截图
 
-以下为 **2.12.0** 桌面工作台的真实截图，使用合成演示数据。
+以下为 **2.16.0 当前开发版本**的真实桌面截图，拍摄于 2026-11-02，使用本地隔离实例和合成演示数据。
+[截图来源与维护说明](docs/images/README.md)。
 
-![SupaShare 2.12.0 中文工作台，展示上传设置和示例文件](docs/images/workspace-zh.jpg)
+**登录页面**：每次打开页面随机展示一张本地图集插图，登录操作期间保持不变。
+
+![SupaShare 2.16.0 中文登录页，右侧展示数据连接主题插图](docs/images/current-ui/login-zh.jpg)
+
+**文件工作台**：查看本人逻辑额度、上传规则和文件列表，多选复制链接或创建交付清单。
+
+![SupaShare 2.16.0 中文工作台，展示逻辑额度、上传区域与三份示例资料](docs/images/current-ui/workspace-zh.jpg)
+
+**公开交付清单**：接收人通过一个页面逐项下载，每项继续使用原有分享规则。
+
+![SupaShare 2.16.0 中文公开交付页面，展示两份可逐项下载的示例资料](docs/images/current-ui/delivery-zh.jpg)
 
 <details>
-<summary>英文工作台 — 2.12.0</summary>
+<summary>文件收集与批量转为分享</summary>
 
-![SupaShare 2.12.0 English workspace](docs/images/workspace-en.jpg)
+查看收件状态，选中收到的文件批量转为普通分享，再继续交付。
+
+![SupaShare 2.16.0 中文文件收集页面，展示收件状态与批量转换操作](docs/images/current-ui/collections-zh.jpg)
 
 </details>
 

@@ -79,14 +79,27 @@ and encryption keys.
 
 ## Screenshots
 
-These are real **2.12.0** desktop workspace screenshots with synthetic example data.
+Real desktop screenshots from the **current 2.16.0 development checkout**, captured on 2026-11-02
+using an isolated local instance and synthetic example data. See [image sources and maintenance](docs/images/README.md).
 
-![SupaShare 2.12.0 English workspace with upload settings and example files](docs/images/workspace-en.jpg)
+**Login**: each page load selects a local illustration, which stays fixed while signing in.
+
+![SupaShare 2.16.0 English login page with a data-connection illustration](docs/images/current-ui/login-en.jpg)
+
+**File workspace**: inspect personal logical usage, upload rules and files; select shares to copy links or create a delivery list.
+
+![SupaShare 2.16.0 English workspace with logical quota, upload area and three example files](docs/images/current-ui/workspace-en.jpg)
+
+**Public delivery list**: recipients download files individually from one page, with each share's original rules.
+
+![SupaShare 2.16.0 English public delivery page with two individually downloadable example files](docs/images/current-ui/delivery-en.jpg)
 
 <details>
-<summary>Chinese workspace — 2.12.0</summary>
+<summary>File collection and batch conversion to shares</summary>
 
-![SupaShare 2.12.0 Chinese workspace](docs/images/workspace-zh.jpg)
+Inspect intake status, select received files and convert them to ordinary shares for delivery.
+
+![SupaShare 2.16.0 English collection page with intake status and received files](docs/images/current-ui/collections-en.jpg)
 
 </details>
 
