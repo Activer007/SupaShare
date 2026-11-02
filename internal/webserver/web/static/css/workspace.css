@@ -21,6 +21,8 @@ body.admin-shell::after { display: none; }
 .workspace-navigation { min-height: 80px; display: flex; align-items: center; gap: 40px; }
 .workspace-brand { color: var(--ss-text); font-size: 26px; font-weight: 750; line-height: 1.25; text-decoration: none; max-width: 260px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
 .workspace-brand:hover { color: #fff; filter: none; }
+.workspace-brand-logo { display: flex; align-items: center; flex-shrink: 0; }
+.workspace-brand-image { display: block; width: 230px; max-width: 100%; height: auto; }
 .admin-shell .workspace-primary-nav { display: flex; align-self: stretch; align-items: stretch; gap: 24px; float: none; flex-wrap: nowrap; }
 .admin-shell .nav-masthead .nav-link { display: flex; align-items: center; gap: 9px; margin: 0; padding: 18px 2px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; font-size: 15px; font-weight: 550; color: var(--ss-muted); white-space: nowrap; }
 .workspace-primary-nav .bi { font-size: 20px; }
@@ -149,6 +151,7 @@ body.admin-shell::after { display: none; }
     .workspace-user { max-width: 130px; }
 }
 @media (max-width: 1100px) {
+    .workspace-brand-image { width: 190px; }
     .workspace-navigation { flex-wrap: wrap; gap: 8px 24px; padding-top: 16px; }
     .workspace-account { order: 2; }
     .admin-shell .workspace-primary-nav { order: 3; width: 100%; flex-wrap: wrap; gap: 8px 24px; }
