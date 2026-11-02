@@ -8,6 +8,13 @@ Overview of all changes
 -----------------------
 
 
+v2.16.5 (2026-11-02; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Place the file workspace's quota summary on the left and upload rules on the
+  right, with the drag-and-drop upload area below. Stack the panels on narrow
+  screens while preserving collapsible rules and existing upload behavior.
+
 v2.16.4 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
