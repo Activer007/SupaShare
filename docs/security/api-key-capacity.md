@@ -23,3 +23,22 @@ Redis SCAN inside Lua is atomic. Admission is bounded to 128 scan calls and 20,0
 ## Verification
 
 Regression tests cover raw/base64 and multibyte name boundaries, both create/rename, collisions, bounded retries, user/admin API capacity and recovery after deletion, and both provider implementations' concurrent admission, existing records, namespace isolation and global limits. Tests use synthetic identities and disposable databases, never production credentials. See the patch delivery notes for exact commands and observed results; unrun browser/production deployments are not implied.
+
+## Local integration observations
+
+The supplied patch was checked against master `3a9c5d4b9ef2b8470b47a412ab5960bd8a48ecab` and reviewed locally. The cloud API suite, targeted race checks, SQLite/Redis quota race checks, vet and noaws build results are reused for the unchanged implementation. Local API-suite and Redis-budget race runs completed successfully. A duplicate SQLite/Redis quota race run was stopped before completion, so it has no additional local pass result.
+
+New local runtime verification used Redis 7.4.9 from the existing `redis:7-alpine` Docker image, with a disposable database and a host port bound only to `127.0.0.1`. Two independent provider instances shared the same literal namespace, including glob characters. Twenty concurrent contenders for a user's last slot and four for the global last slot each produced exactly one successful admission. One hundred update/delete races left the key deleted, and property updates retained an existing system key's TTL.
+
+The actual Redis script also rejected admission without persisting the candidate when 20,001 system-key records exhausted the returned-record budget, and when 50,000 unrelated keys exhausted the SCAN-call budget. These checks exercised the native server's Lua and SCAN behavior.
+
+Observed provider-call durations include local Docker/TCP overhead, queueing and Go race instrumentation.
+
+| Scenario | Calls | Observed milliseconds |
+| --- | --- | --- |
+| User last slot, 20 concurrent contenders | 20 | 17.689–28.667 |
+| Global last slot, 4 concurrent contenders | 4 | 378.919–379.046 |
+| Returned-record budget exhaustion | 1 | 200.381 |
+| SCAN-call budget exhaustion | 1 | 63.146 |
+
+Production-load latency, Redis Cluster/replication and production deployments remain unverified. `COUNT` remains a hint, and the documented inspection budgets provide no strict elapsed-time guarantee. The temporary harness and databases are confined to local QA storage.
