@@ -17,6 +17,16 @@ func TestArchiveRejectsSpecialFiles(t *testing.T) {
 	for _, kind := range []string{"fifo", "socket"} {
 		t.Run(kind, func(t *testing.T) {
 			src := t.TempDir()
+			if kind == "socket" {
+				// Darwin socket paths are limited to 104 bytes. Avoid the full
+				// test name in t.TempDir's path while retaining the OS temp root.
+				shortDir, err := os.MkdirTemp("", "ss-")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.RemoveAll(shortDir) })
+				src = shortDir
+			}
 			p := filepath.Join(src, "special")
 			if kind == "fifo" {
 				if err := syscall.Mkfifo(p, 0600); err != nil {
