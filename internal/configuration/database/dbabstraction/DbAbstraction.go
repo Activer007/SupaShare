@@ -20,6 +20,10 @@ const (
 
 // Database declares the required functions for a database connection
 type Database interface {
+	CreateOIDCUser(string, string, string, models.UserPermission) (models.User, error)
+	GetOIDCUser(string, string) (models.User, bool, error)
+	BindOIDCIdentity(string, string, int) error
+	ListOIDCIdentities() ([]models.OIDCIdentity, error)
 	InsertDelivery(context.Context, models.Delivery) (bool, error)
 	ReadDelivery(context.Context, string) (models.Delivery, bool, error)
 	ListDeliveries(context.Context, int) ([]models.Delivery, error)

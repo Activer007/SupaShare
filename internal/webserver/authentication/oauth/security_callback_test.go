@@ -41,6 +41,9 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 			idp := securityfixture.NewIDP(t, securityfixture.Identity{Subject: "synthetic-subject", Email: "sec012@example.invalid", EmailVerified: true})
 			user := models.User{Id: 9013, Name: "sec012@example.invalid", UserLevel: models.UserLevelUser}
 			database.SaveUser(user, false)
+			if err := database.BindOIDCIdentity(idp.URL, "synthetic-subject", user.Id); err != nil {
+				t.Fatal(err)
+			}
 			t.Cleanup(func() { database.DeleteAllSessionsByUser(user.Id); database.DeleteUser(user.Id) })
 			auth := models.AuthenticationConfig{Method: models.AuthenticationOAuth2, OAuthProvider: idp.URL, OAuthClientId: "fixture-client", OAuthClientSecret: "synthetic-secret", OAuthRecheckInterval: 1, OnlyRegisteredUsers: true}
 			configuration.Get().Authentication = auth

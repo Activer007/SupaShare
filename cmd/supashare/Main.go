@@ -53,6 +53,13 @@ const versionGokapi = "2.16.6"
 // Main routine that is called on startup
 func main() {
 	passedFlags := flagparser.ParseFlags()
+	if passedFlags.OIDCLink {
+		if err := runOIDCLink(passedFlags); err != nil {
+			fmt.Fprintln(os.Stderr, "OIDC account linking failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	handleServiceInstall(passedFlags)
 	handleDbMigration(passedFlags)
 

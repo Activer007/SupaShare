@@ -6,18 +6,19 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/Activer007/SupaShare/internal/configuration"
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication"
 	"github.com/Activer007/SupaShare/internal/webserver/errorHandling"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
 var config oauth2.Config
 var ctx context.Context
 var provider *oidc.Provider
+var issuer string
 
 // Init starts the oauth connection
 func Init(baseUrl string, credentials models.AuthenticationConfig) {
@@ -28,6 +29,7 @@ func Init(baseUrl string, credentials models.AuthenticationConfig) {
 		log.Fatal(err)
 	}
 
+	issuer = credentials.OAuthProvider
 	systemConfig := configuration.Get()
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 	if systemConfig.Authentication.OAuthGroupScope != "" {
@@ -115,6 +117,19 @@ func HandlerCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bind the identity only after validating the signed ID token against the
+	// configured provider and client. UserInfo must describe that same subject.
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Missing ID token", nil)
+		return
+	}
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: config.ClientID}).Verify(r.Context(), rawIDToken)
+	if err != nil || idToken.Subject == "" {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Invalid ID token", nil)
+		return
+	}
+
 	userInfo, err := provider.UserInfo(r.Context(), oauth2.StaticTokenSource(oauth2Token))
 	if err != nil {
 		if r.Context().Err() != nil {
@@ -126,15 +141,22 @@ func HandlerCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		return
 	}
+	if userInfo.Subject != idToken.Subject {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "UserInfo subject mismatch", nil)
+		return
+	}
+
 	if userInfo.Email == "" {
 		errorHandling.RedirectToOAuthErrorPage(w, r, "An empty email address was provided.\nPlease make sure that you have your"+
 			" email address set in your authentication user backend.", nil)
 		return
 	}
 	info := authentication.OAuthUserInfo{
-		Subject:    userInfo.Subject,
-		Email:      userInfo.Email,
-		ClaimsSent: userInfo,
+		Issuer:        issuer,
+		Subject:       idToken.Subject,
+		EmailVerified: userInfo.EmailVerified,
+		Email:         userInfo.Email,
+		ClaimsSent:    userInfo,
 	}
 	err = authentication.CheckOauthUserAndRedirect(w, r, info)
 	if err != nil {

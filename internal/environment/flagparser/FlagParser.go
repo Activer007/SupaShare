@@ -59,6 +59,8 @@ func ParseFlags() MainFlags {
 
 	installService := passedFlags.Bool("install-service", false, "Installs SupaShare as a systemd service")
 	uninstallService := passedFlags.Bool("uninstall-service", false, "Uninstalls the SupaShare systemd service")
+	oidcLinkUser := passedFlags.Int("oidc-link-user", 0, "Explicitly bind an existing local user ID to an OIDC subject and exit (stop server first)")
+	oidcSubject := passedFlags.String("oidc-subject", "", "Exact subject from the configured identity provider; requires --oidc-link-user")
 	deploymentPassword := passedFlags.String("deployment-password", "", "Sets a new password. This should only be used for non-interactive deployment")
 
 	passedFlags.Usage = showUsage(passedFlags, aliases)
@@ -83,7 +85,14 @@ func ParseFlags() MainFlags {
 		InstallService:     *installService,
 		UninstallService:   *uninstallService,
 		DeploymentPassword: *deploymentPassword,
+		OIDCLinkUser:       *oidcLinkUser,
+		OIDCSubject:        *oidcSubject,
 	}
+	passedFlags.Visit(func(f *flag.Flag) {
+		if f.Name == "oidc-link-user" || f.Name == "oidc-subject" {
+			result.OIDCLink = true
+		}
+	})
 	result.setBoolValues()
 	return result
 }
@@ -182,6 +191,9 @@ func getAliasedInt(flag1, flag2 *int) int {
 
 // MainFlags holds info for the parsed program arguments
 type MainFlags struct {
+	OIDCLink           bool
+	OIDCLinkUser       int
+	OIDCSubject        string
 	ConfigPath         string
 	ConfigDir          string
 	DataDir            string
