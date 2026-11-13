@@ -70,3 +70,13 @@ the prior cloud build; no browser visual test or full webserver suite was run.
 Local Codex should regenerate assets using the ordinary repository workflow
 before its review and ordinary PR creation. Do not merge or start group C without
 separate user instruction.
+
+Local integration reused the cloud results and added two focused regressions:
+`TestResetRequiredManagementAPIAuthModes` checks the live management API gate in
+internal, OAuth, proxy-header and disabled modes. `TestPasswordResetPreservesPublicHTTP`
+checks registered share/download/Delivery/invitation routes with a reset-required
+owner and verifies that invitation API authentication reaches parameter parsing.
+Both passed with `-tags=test,noaws`. The invitation request deliberately omits a
+required parameter and does not upload a file. `go generate ./...` completed with
+no tracked asset changes. Real IdP/proxy deployment and timing benchmarks remain
+outside this verification.

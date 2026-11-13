@@ -3,17 +3,97 @@
 package webserver
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
 	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/storage/delivery"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/csrftoken"
+	"github.com/Activer007/SupaShare/internal/webserver/errorHandling/errorcodes"
 )
+
+// Use the registered public routes with a reset-required owner and synthetic
+// content. The invitation API request deliberately stops at parameter parsing.
+func TestPasswordResetPreservesPublicHTTP(t *testing.T) {
+	owner := models.User{Id: 9832, Name: "synthetic-reset-public", UserLevel: models.UserLevelUser, ResetPassword: true, Permissions: models.UserPermGuestUploads}
+	database.SaveUser(owner, false)
+	t.Cleanup(func() { database.DeleteUser(owner.Id) })
+	const content = "synthetic public reset content"
+	blobID := "reset-public-" + rand.Text()
+	blobPath := filepath.Join(configuration.Get().DataDir, blobID)
+	if err := os.WriteFile(blobPath, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(blobPath) })
+	ids := []string{"reset-share-" + rand.Text(), "reset-share-" + rand.Text()}
+	for _, id := range ids {
+		file := models.File{Id: id, UserId: owner.Id, Name: "synthetic-public.txt", SHA1: blobID, SizeBytes: int64(len(content)), UnlimitedTime: true, UnlimitedDownloads: true}
+		database.SaveMetaData(file)
+		t.Cleanup(func() { database.DeleteMetaData(file.Id) })
+	}
+	d, err := delivery.Create(context.Background(), owner.Id, delivery.Input{Title: "Synthetic reset delivery", FileIDs: ids})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = database.RevokeDelivery(context.Background(), d.Token, owner.Id, time.Now().Unix()) })
+	invitation := models.ApiKey{Id: rand.Text(), UserId: owner.Id, UploadRequestId: "synthetic-reset-public-request"}
+	collection := models.FileRequest{Id: invitation.UploadRequestId, UserId: owner.Id, ApiKey: invitation.Id, Name: "Synthetic reset invitation"}
+	database.SaveApiKey(invitation)
+	t.Cleanup(func() { database.DeleteApiKey(invitation.Id) })
+	database.SaveFileRequest(collection)
+	t.Cleanup(func() { database.DeleteFileRequest(collection) })
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for _, tc := range []struct {
+		path, marker string
+	}{
+		{"/d?id=" + ids[0], "synthetic-public.txt"},
+		{"/downloadFile?id=" + ids[0], content},
+		{"/delivery/" + d.Token, d.Title},
+		{"/r/" + invitation.Id, collection.Name},
+		{"/publicUpload?id=" + collection.Id + "&key=" + invitation.Id, collection.Name},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			response, err := client.Get("http://localhost:53843" + tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(body), tc.marker) {
+				t.Fatalf("status=%d read=%v body=%s", response.StatusCode, err, body)
+			}
+		})
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:53843/api/uploadrequest/chunk/reserve", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("apikey", invitation.Id)
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var result struct{ ErrorCode int }
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil || response.StatusCode != http.StatusBadRequest || result.ErrorCode != errorcodes.CannotParse {
+		t.Fatalf("public API failed before parameter parsing: status=%d code=%d error=%v", response.StatusCode, result.ErrorCode, err)
+	}
+	stored, ok := database.GetApiKey(invitation.Id)
+	if !ok || stored.Id != invitation.Id || stored.UserId != owner.Id || stored.UploadRequestId != collection.Id {
+		t.Fatal("public request changed the invitation credential")
+	}
+}
 
 // Exercise the actual registered routes, including a default administrative
 // force-change, a fresh login with the retained password and existing API keys.
