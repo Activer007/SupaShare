@@ -213,9 +213,11 @@ func extractOauthGroups(userInfo OAuthUserClaims, groupScope string) ([]string, 
 
 // OAuthUserInfo is used to make testing easier. This results in an additional parameter for the subject unfortunately
 type OAuthUserInfo struct {
-	Subject    string
-	Email      string
-	ClaimsSent OAuthUserClaims
+	Issuer        string
+	Subject       string
+	EmailVerified bool
+	Email         string
+	ClaimsSent    OAuthUserClaims
 }
 
 // OAuthUserClaims contains the claims
@@ -235,7 +237,7 @@ func CheckOauthUserAndRedirect(w http.ResponseWriter, r *http.Request, userInfo 
 		}
 	}
 	if isValidOauthUser(userInfo, groups) {
-		user, ok, errCreate := getOrCreateUser(userInfo.Email)
+		user, ok, errCreate := getOrCreateOIDCUser(userInfo)
 		if errCreate != nil {
 			return errCreate
 		}
@@ -247,6 +249,31 @@ func CheckOauthUserAndRedirect(w http.ResponseWriter, r *http.Request, userInfo 
 	}
 	errorHandling.RedirectGenericErrorPage(w, r, errorHandling.TypeOAuthNotAuthorised)
 	return nil
+}
+
+// getOrCreateOIDCUser never uses an email address as proof of account ownership.
+// Existing accounts (including the initial administrator) require an explicit
+// operator binding. Email is only the initial display/login name of a new user.
+func getOrCreateOIDCUser(info OAuthUserInfo) (models.User, bool, error) {
+	user, ok, err := database.GetOIDCUser(info.Issuer, info.Subject)
+	if err != nil || ok {
+		return user, ok, err
+	}
+	if authSettings.OnlyRegisteredUsers || !info.EmailVerified || len(info.Email) < 2 {
+		return models.User{}, false, nil
+	}
+	if _, exists := database.GetUserByName(info.Email); exists {
+		return models.User{}, false, nil
+	}
+	permissions := models.UserPermissionNone
+	if configuration.GetEnvironment().PermRequestGrantedByDefault {
+		permissions = models.UserPermGuestUploads
+	}
+	user, err = database.CreateOIDCUser(info.Issuer, info.Subject, info.Email, permissions)
+	if err != nil {
+		return models.User{}, false, err
+	}
+	return user, true, nil
 }
 
 func getOrCreateUser(username string) (models.User, bool, error) {
@@ -266,7 +293,7 @@ func getOrCreateUser(username string) (models.User, bool, error) {
 }
 
 func isValidOauthUser(userInfo OAuthUserInfo, groups []string) bool {
-	if userInfo.Subject == "" {
+	if userInfo.Issuer == "" || userInfo.Issuer != authSettings.OAuthProvider || userInfo.Subject == "" {
 		return false
 	}
 	if userInfo.Email == "" {

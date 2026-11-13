@@ -105,6 +105,12 @@ func (p DatabaseProvider) UpdateUserLastOnline(id int) {
 
 // DeleteUser deletes a user with the given ID
 func (p DatabaseProvider) DeleteUser(id int) {
-	_, err := p.sqliteDb.Exec("DELETE FROM Users WHERE Id = ?", id)
+	tx, err := p.sqliteDb.Begin()
 	helper.Check(err)
+	defer tx.Rollback()
+	_, err = tx.Exec("DELETE FROM OIDCIdentities WHERE UserID = ?", id)
+	helper.Check(err)
+	_, err = tx.Exec("DELETE FROM Users WHERE Id = ?", id)
+	helper.Check(err)
+	helper.Check(tx.Commit())
 }

@@ -43,6 +43,9 @@ func TestSEC014CallbackDeadlineReachesProvider(t *testing.T) {
 			started := make(chan struct{}, 1)
 			disconnected := make(chan struct{}, 1)
 			release := make(chan struct{})
+			signer := newMockOIDCServer()
+			original := signer.server
+			defer original.Close()
 			var base string
 			idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				io.Copy(io.Discard, r.Body)
@@ -62,20 +65,23 @@ func TestSEC014CallbackDeadlineReachesProvider(t *testing.T) {
 				case "/.well-known/openid-configuration":
 					json.NewEncoder(w).Encode(map[string]string{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "userinfo_endpoint": base + "/userinfo", "jwks_uri": base + "/keys"})
 				case "/token":
-					io.WriteString(w, `{"access_token":"synthetic-access-token","token_type":"Bearer","expires_in":60}`)
+					json.NewEncoder(w).Encode(map[string]any{"access_token": "synthetic-access-token", "token_type": "Bearer", "expires_in": 60, "id_token": signer.buildIDToken()})
+				case "/keys":
+					signer.handleJWKS(w, r)
 				default:
 					http.NotFound(w, r)
 				}
 			}))
 			defer idp.Close()
 			base = idp.URL
+			signer.server = idp
 			ctx = context.Background()
 			var err error
 			provider, err = oidc.NewProvider(ctx, base)
 			if err != nil {
 				t.Fatal(err)
 			}
-			config = oauth2.Config{ClientID: "synthetic", Endpoint: provider.Endpoint()}
+			config = oauth2.Config{ClientID: "test-client", Endpoint: provider.Endpoint()}
 			config.Endpoint.AuthStyle = oauth2.AuthStyleInParams
 			requestContext, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 			defer cancel()

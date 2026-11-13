@@ -221,7 +221,7 @@ func TestGetUserFromRequest(t *testing.T) {
 
 func TestIsValidOauthUser(t *testing.T) {
 	Init(modelOauth)
-	info := OAuthUserInfo{Email: "", Subject: "randomid"}
+	info := OAuthUserInfo{Issuer: modelOauth.OAuthProvider, Email: "", Subject: "randomid"}
 	test.IsEqualBool(t, isValidOauthUser(info, []string{}), false)
 	info.Email = "newemail"
 	test.IsEqualBool(t, isValidOauthUser(info, []string{}), true)
@@ -368,6 +368,7 @@ func getOauthUserOutput(t *testing.T, info OAuthUserInfo) (*httptest.ResponseRec
 func TestCheckOauthUser(t *testing.T) {
 	Init(modelOauth)
 	info := OAuthUserInfo{
+		Issuer: modelOauth.OAuthProvider, EmailVerified: true,
 		ClaimsSent: testInfo{Output: []byte(`{"amr":["pwd","hwk","user","pin","mfa"],"aud":["gokapi-dev"],"auth_time":1705573822,"azp":"gokapi-dev","client_id":"gokapi-dev","email":"test@test.com","email_verified":true,"groups":["admins","dev"],"iat":1705577400,"iss":"https://auth.test.com","name":"gokapi","preferred_username":"gokapi","rat":1705577400,"sub":"944444cf3e-0546-44f2-acfa-a94444444360"}`)},
 	}
 	w, err := getOauthUserOutput(t, info)
@@ -384,12 +385,14 @@ func TestCheckOauthUser(t *testing.T) {
 	test.IsNil(t, err)
 	test.ResponseIsRedirect(t, w, "admin", false)
 
+	info.Subject = "unregistered-subject"
 	info.Email = "test@test-invalid.com"
 	authSettings.OnlyRegisteredUsers = true
 	w, err = getOauthUserOutput(t, info)
 	test.IsNil(t, err)
 	test.ResponseIsRedirect(t, w, "error", true)
 
+	info.Subject = "random"
 	info.Email = "random"
 	w, err = getOauthUserOutput(t, info)
 	test.IsNil(t, err)
