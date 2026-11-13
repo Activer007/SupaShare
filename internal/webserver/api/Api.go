@@ -1494,7 +1494,7 @@ func apiURequestSave(w http.ResponseWriter, r requestParser, user models.User, _
 	} else {
 		logging.LogEditFileRequest(uploadRequest, user)
 	}
-	result, err := json.Marshal(uploadRequest)
+	result, err := json.Marshal(authorization.FileRequestForViewer(user, uploadRequest))
 	helper.Check(err)
 	_, _ = w.Write(result)
 }
@@ -1503,7 +1503,7 @@ func apiUploadRequestList(w http.ResponseWriter, _ requestParser, user models.Us
 	userRequests := make([]models.FileRequest, 0)
 	for _, request := range filerequest.GetAll() {
 		if authorization.Authorize(user, authorization.ReadFile, request.UserId) {
-			userRequests = append(userRequests, request)
+			userRequests = append(userRequests, authorization.FileRequestForViewer(user, request))
 		}
 	}
 	result, err := json.Marshal(userRequests)
@@ -1526,7 +1526,7 @@ func apiUploadRequestListSingle(w http.ResponseWriter, r requestParser, user mod
 		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to show this upload request")
 		return
 	}
-	result, err := json.Marshal(uploadRequest)
+	result, err := json.Marshal(authorization.FileRequestForViewer(user, uploadRequest))
 	helper.Check(err)
 	_, _ = w.Write(result)
 }

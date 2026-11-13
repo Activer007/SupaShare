@@ -604,7 +604,7 @@ function createFileRequestRow(jsonResult, user) {
         const td = document.createElement("td");
         const a = document.createElement("a");
         a.textContent = text;
-        a.href = href;
+        if (href) a.href = href;
         a.target = "_blank";
         td.appendChild(a);
         return td;
@@ -616,7 +616,7 @@ function createFileRequestRow(jsonResult, user) {
         return i;
     }
 
-    const publicUrl = `${baseUrl}r/${encodeURIComponent(jsonResult.apikey)}`;
+    const publicUrl = jsonResult.apikey ? `${baseUrl}r/${encodeURIComponent(jsonResult.apikey)}` : "";
 
     const tr = document.createElement("tr");
     tr.id = `row-${jsonResult.id}`;
@@ -719,7 +719,8 @@ function createFileRequestRow(jsonResult, user) {
     copyBtn.type = "button";
     copyBtn.className = "copyurl btn btn-outline-light btn-sm";
     copyBtn.title = t("common.copyURL");
-    copyBtn.setAttribute("data-clipboard-text", publicUrl);
+    if (publicUrl) copyBtn.setAttribute("data-clipboard-text", publicUrl);
+    else copyBtn.hidden = true;
 
     copyBtn.appendChild(icon("bi-copy"));
 

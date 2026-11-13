@@ -30,7 +30,7 @@
                         
 {{ range $fileRequest := .FileRequests }}
                             <tr id="row-{{ .Id }}" class="no-bottom-border filerequest-item" data-collection-summary data-owner-id="{{.UserId}}" data-id="{{.Id}}" data-uploadedfiles="{{.UploadedFiles}}" data-reserveduploads="{{.ReservedUploads}}" data-maxfiles="{{.MaxFiles}}" data-totalfilesize="{{.TotalFileSize}}" data-lastupload="{{.LastUpload}}" data-expiry="{{.Expiry}}" data-fileids="{{.GetFilesAsString}}">
-		                    <td><a id="collection-name-{{.Id}}" href="{{ $.ServerUrl }}r/{{ .ApiKey }}" target="_blank">{{ .Name }}</a><span id="collection-status-{{.Id}}" class="badge collection-status" role="status"></span>
+		                    <td>{{if .ApiKey}}<a id="collection-name-{{.Id}}" href="{{ $.ServerUrl }}r/{{ .ApiKey }}" target="_blank">{{ .Name }}</a>{{else}}<span id="collection-name-{{.Id}}">{{.Name}}</span>{{end}}<span id="collection-status-{{.Id}}" class="badge collection-status" role="status"></span>
                               <div id="collection-arrivals-{{.Id}}" class="collection-arrivals" hidden>
                                 <span id="collection-arrivals-count-{{.Id}}" role="status" aria-live="polite"></span>
                                 <button id="collection-arrivals-view-{{.Id}}" type="button" class="btn btn-outline-light btn-sm" onclick="viewCollectionArrivals('{{.Id}}')">{{$.UI.T "collection.arrivals.view"}}</button>
@@ -53,7 +53,7 @@
                                 {{ template "uRDownloadbutton" (newFileRequestContext . $.UI) }}
                                 
                                 
-                                <button id="copy-{{ .Id }}" type="button" data-clipboard-text="{{ $.ServerUrl }}r/{{ .ApiKey }}" class="copyurl btn btn-outline-light btn-sm" title="{{$.UI.T "common.copyURL"}}"><i class="bi bi-copy"></i></button>
+                                {{if .ApiKey}}<button id="copy-{{ .Id }}" type="button" data-clipboard-text="{{ $.ServerUrl }}r/{{ .ApiKey }}" class="copyurl btn btn-outline-light btn-sm" title="{{$.UI.T "common.copyURL"}}"><i class="bi bi-copy"></i></button>{{end}}
                                 
                                 <button id="edit-{{ .Id }}" type="button" title="{{$.UI.T "request.edit"}}" class="btn btn-outline-light btn-sm" onclick="editFileRequest('{{ .Id }}', '{{ .Name }}', {{ .MaxFiles }}, {{ .MaxSize }}, {{ .Expiry }}, '{{ .Notes }}', {{ .AllowedDownloads }})">
 		                        	<i class="bi bi-pencil"></i></button>
