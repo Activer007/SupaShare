@@ -824,7 +824,15 @@ func createAndOutputPresignedUrl(ids []string, w http.ResponseWriter, filename s
 		UserId:   apiKey.UserId,
 		ApiKeyId: apiKey.Id,
 	}
-	presign.Save(presignUrl)
+	if err := presign.Save(presignUrl); err != nil {
+		if errors.Is(err, presign.ErrCapacity) {
+			w.Header().Set("Retry-After", "1")
+			sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "Presign capacity is busy; retry later")
+			return
+		}
+		sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, "Presign request exceeds supported limits")
+		return
+	}
 	response := struct {
 		Result      string `json:"Result"`
 		DownloadUrl string `json:"downloadUrl"`
