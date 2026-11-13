@@ -246,14 +246,12 @@ func GetConfigLocation() ([]string, bool) {
 	if environment.IsDockerInstance() {
 		return []string{cliconstants.DockerFolderConfigFile}, true
 	}
-	var result []string
-	result = append(result, cliconstants.DefaultConfigFileName)
-	dirname, err := os.UserHomeDir()
-	if err == nil {
-		result = append(result, filepath.Join(dirname, cliconstants.DefaultUserConfigPathNoHome))
+	dirname, err := os.UserConfigDir()
+	if err != nil {
+		// Never fall back to the current directory when no private location exists.
+		return []string{""}, true
 	}
-	result = append(result, cliconstants.DefaultUserConfigPathGlobal)
-	return result, true
+	return []string{filepath.Join(dirname, "supashare", cliconstants.DefaultConfigFileName)}, true
 }
 
 func getParameter(position *int) string {
@@ -293,7 +291,7 @@ func printUsage(exitCode int) {
 	fmt.Println("  -f, --file <path>               File to upload (required for \"upload\")")
 	fmt.Println("  -D, --directory <path>          Folder to upload (required for \"upload-dir\")")
 	fmt.Println("  -i, --id <id>                   File ID to download (required for \"download\")")
-	fmt.Println("  -c, --configuration <path>      Path to configuration file (default: gokapi-cli.json)")
+	fmt.Println("  -c, --configuration <path>      Path to configuration file (default: user config directory/supashare/gokapi-cli.json)")
 	fmt.Println("  -j, --json                      Output the result in JSON only")
 	fmt.Println("  -x, --disable-e2e               Disable end-to-end encryption")
 	fmt.Println("  -e, --expiry-days <int>         Set file expiry in days (default: unlimited)")

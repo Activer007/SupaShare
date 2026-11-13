@@ -327,21 +327,33 @@ To begin, authenticate your session using the following command:
 
 You will be prompted to provide your server URL, an API key with upload permissions, and your end-to-end encryption key (if applicable).
 
-* **Storage:** Credentials are stored in plain text. The CLI searches the following locations in order and uses the first file it finds:
+* **Storage:** Credentials remain plain text, protected by the operating system.
+  Native installations now use ``os.UserConfigDir()/supashare/gokapi-cli.json``:
 
-  1. ``./gokapi-cli.json`` (current working directory)
-  2. ``~/.config/gokapi-cli/gokapi-cli.json``
-  3. ``/etc/gokapi-cli/gokapi-cli.json``
+  * Linux: ``${XDG_CONFIG_HOME:-$HOME/.config}/supashare/gokapi-cli.json``
+  * macOS: ``~/Library/Application Support/supashare/gokapi-cli.json``
+  * Windows: ``%AppData%\supashare\gokapi-cli.json``
 
-  When running via Docker, only ``/app/config/config.json`` is used.
+  Docker still uses ``/app/config/config.json``. An explicit ``-c`` path is
+  supported; its parent directory must already exist and be secure.
+  Missing native default directories are created with mode 0700 on Unix.
+  Unix credentials are replaced with a new 0600 file, never written through
+  an existing inode. Symlinks and non-regular credential files are rejected.
+  Directory ownership and write permissions are checked before access.
+  Windows uses native ACL checks/protection, not Unix chmod as an ACL substitute.
+  Network filesystems must honor the platform's access-control and rename semantics.
 
-  The native CLI configuration paths retain their legacy ``gokapi-cli`` names
-  so SupaShare can reuse existing login configuration without moving credentials.
-
-  You may also specify a custom path using the ``-c`` parameter, which skips the search entirely.
-
-  .. note::
-     On first login (when no config file exists yet), credentials are always written to ``./gokapi-cli.json`` in the current working directory. If you intend to use a different location, specify it explicitly with ``-c``.
+  .. important::
+     Legacy ``./gokapi-cli.json``, ``~/.config/gokapi-cli/gokapi-cli.json`` and
+     ``/etc/gokapi-cli/gokapi-cli.json`` are no longer discovered automatically.
+     Run ``supashare-cli login`` again to use the private default. Alternatively,
+     use ``-c`` with an owned, secure legacy file and directory. If the old file
+     has unsafe permissions, log in with that same ``-c`` path to replace it;
+     reads refuse overly permissive credentials. No old file is automatically
+     moved or deleted. Review/remove obsolete copies and rotate credentials if
+     they may already have been exposed. A shared/group-writable Docker mount
+     or custom directory is rejected; use a dedicated directory owned by the
+     CLI user, without write access for other users.
 
 * **Logout:** To logout, run ``supashare-cli logout`` or manually delete the configuration file.
 
