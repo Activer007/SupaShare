@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,11 @@ type userNameContext string
 const CookieOauth = "state"
 
 const userNameContextKey userNameContext = "userName"
+
+// Valid Argon2id encoding used only for missing accounts. Verification uses the
+// same current work factors as real hashes; the lookup result still controls
+// authentication, so this value can never grant access.
+const dummyLoginHash = "argon2id$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000"
 
 var authSettings models.AuthenticationConfig
 
@@ -77,6 +83,13 @@ func checkAuthConfig(config models.AuthenticationConfig) error {
 	default:
 		return errors.New("unknown authentication selected")
 	}
+}
+
+// RequiresPasswordChange confines local-password principals only. A historical
+// local reset flag must not impose a local-password flow on external identity
+// providers or disabled authentication after an operator changes auth mode.
+func RequiresPasswordChange(user models.User) bool {
+	return user.ResetPassword && configuration.Get().Authentication.Method == models.AuthenticationInternal
 }
 
 // GetUserFromRequest returns the user that has been authenticated with the request
@@ -329,11 +342,12 @@ func checkUsernameAndPassword(username, password string, validCsrf bool) (models
 		return models.User{}, false, false
 	}
 	user, ok := database.GetUserByName(username)
+	passwordHash := user.Password
 	if !ok {
-		return models.User{}, false, true
+		passwordHash = dummyLoginHash
 	}
-	isSame, isLegacy := configuration.VerifyPassword(password, user.Password, configuration.Get().Authentication.SaltAdmin)
-	if !isSame {
+	isSame, isLegacy := verifyLoginPassword(password, passwordHash, configuration.Get().Authentication.SaltAdmin)
+	if !ok || !isSame {
 		return models.User{}, false, true
 	}
 	if isLegacy {
@@ -341,6 +355,20 @@ func checkUsernameAndPassword(username, password string, validCsrf bool) (models
 		database.SaveUser(user, false)
 	}
 	return user, true, true
+}
+
+// verifyLoginPassword ensures every CSRF-valid login attempt performs Argon2,
+// including legacy accounts and corrupt/empty stored hashes. Legacy successes
+// still migrate through the existing path; this is not a constant-time claim.
+func verifyLoginPassword(password, storedHash, legacySalt string) (bool, bool) {
+	parts := strings.Split(storedHash, "$")
+	if len(storedHash) != 40 && len(parts) == 3 && parts[0] == "argon2id" {
+		if _, err := hex.DecodeString(parts[1]); err == nil {
+			return configuration.VerifyPassword(password, storedHash, legacySalt)
+		}
+	}
+	configuration.VerifyPassword(password, dummyLoginHash, "")
+	return configuration.VerifyPassword(password, storedHash, legacySalt)
 }
 
 // Logout logs the user out and removes the session

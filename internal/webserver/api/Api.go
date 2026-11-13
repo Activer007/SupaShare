@@ -25,6 +25,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/uploadquota"
 	"github.com/Activer007/SupaShare/internal/webserver/api/mutex/apimutex"
 	"github.com/Activer007/SupaShare/internal/webserver/api/mutex/e2emutex"
+	"github.com/Activer007/SupaShare/internal/webserver/authentication"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/downloadPasswordToken"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/users"
 	"github.com/Activer007/SupaShare/internal/webserver/errorHandling/errorcodes"
@@ -190,8 +191,14 @@ func apiModifyApiKey(w http.ResponseWriter, r requestParser, user models.User, _
 // key model (including the private ID)
 func isValidKeyForEditing(apiKey string) (models.User, models.ApiKey, bool) {
 	apiKey = publicKeyToApiKey(apiKey)
-	user, fullApiKey, ok := isValidApiKey(apiKey, false, models.ApiPermNone)
-	if !ok {
+	// Resolve the target, not a credential for the caller. A reset-required
+	// owner must not prevent an authorized administrator revoking their keys.
+	fullApiKey, ok := database.GetApiKey(apiKey)
+	if !ok || fullApiKey.Id == "" || (fullApiKey.Expiry != 0 && fullApiKey.Expiry <= time.Now().Unix()) {
+		return models.User{}, models.ApiKey{}, false
+	}
+	user, ok := database.GetUser(fullApiKey.UserId)
+	if !ok || !authorization.CanUseAPI(user, fullApiKey, models.ApiPermNone) {
 		return models.User{}, models.ApiKey{}, false
 	}
 	return user, fullApiKey, true
@@ -1590,7 +1597,9 @@ func isValidApiKey(key string, modifyTime bool, requiredPermissionApiKey models.
 			return models.User{}, models.ApiKey{}, false
 		}
 		user, ok := database.GetUser(savedKey.UserId)
-		if !ok || !authorization.CanUseAPI(user, savedKey, requiredPermissionApiKey) {
+		// Public File Request invitations are independent bearer capabilities.
+		// Confinement applies to management credentials, not public links.
+		if !ok || (authentication.RequiresPasswordChange(user) && !savedKey.IsUploadRequestKey()) || !authorization.CanUseAPI(user, savedKey, requiredPermissionApiKey) {
 			return models.User{}, models.ApiKey{}, false
 		}
 		return user, savedKey, true
