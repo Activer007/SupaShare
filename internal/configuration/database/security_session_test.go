@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/Activer007/SupaShare/internal/configuration/database/dbabstraction"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/alicebob/miniredis/v2"
 )
 
-type sessionDeleteBarrier struct {
+type sessionAliasBarrier struct {
 	dbabstraction.Database
 	deleted, resume chan struct{}
 }
 
-func (b sessionDeleteBarrier) DeleteSession(id string) {
-	b.Database.DeleteSession(id)
-	if id == "synthetic-old" {
+func (b sessionAliasBarrier) SaveSession(id string, session models.Session) {
+	b.Database.SaveSession(id, session)
+	if id == "synthetic-old" && session.Successor != "" {
 		close(b.deleted)
 		<-b.resume
 	}
@@ -47,7 +47,7 @@ func TestSEC021SessionMutationOrdering(t *testing.T) {
 				t.Run(mode, func(t *testing.T) {
 					store.DeleteAllSessions()
 
-					barrier := sessionDeleteBarrier{Database: store, deleted: make(chan struct{}), resume: make(chan struct{})}
+					barrier := sessionAliasBarrier{Database: store, deleted: make(chan struct{}), resume: make(chan struct{})}
 					db = barrier
 					session := models.Session{UserId: 9021, RenewAt: time.Now().Add(-time.Minute).Unix(), ValidUntil: time.Now().Add(time.Hour).Unix()}
 					SaveSession("synthetic-old", session)

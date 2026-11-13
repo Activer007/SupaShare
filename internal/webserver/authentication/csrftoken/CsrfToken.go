@@ -18,6 +18,7 @@ const (
 	TypeLogin    = iota
 	TypeApiToken // currently not used
 	TypePasswordChange
+	TypeLogout
 )
 
 type csrfToken struct {

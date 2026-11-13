@@ -229,21 +229,34 @@ function downloadFilesZipWithPresign(ids, filename) {
         });
 }
 
-/**
- * doLogout
- *
- * Called by the Logout link's onclick. Notifies the SharedWorker (if active)
- * to drop this port – and close the SSE connection if no other tabs remain –
- * then navigates to ./logout. Using an explicit message here is more precise
- * than beforeunload, which would fire on every navigation (refresh, back, etc.)
- * and could prematurely tear down the worker while other tabs are still open.
- */
-function doLogout(event) {
-    if (typeof sseWorkerPort !== "undefined" && sseWorkerPort !== null) {
-        // "shutdown" tells the worker to close the SSE connection and notify
-        // all other tabs, not just this one, since the session is now invalid
-        // for everyone. Each tab's onmessage handler will redirect to ./login.
-        sseWorkerPort.postMessage({ type: "shutdown" });
+// Obtain a fresh browser-bound token before changing session state. A rejected
+// request must not broadcast logout to other tabs or close their SSE connection.
+let logoutBusy = false;
+async function doLogout() {
+    if (logoutBusy) return;
+    logoutBusy = true;
+    try {
+        const tokenResponse = await fetch("./logoutToken", { credentials: "same-origin", cache: "no-store" });
+        if (!tokenResponse.ok) throw new Error("Logout token request failed");
+        const { token } = await tokenResponse.json();
+        const response = await fetch("./logout", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+            body: new URLSearchParams({ "csrf-token": token })
+        });
+        if (!response.ok) throw new Error("Logout request failed");
+        const result = await response.json();
+        if (result.redirect !== "login" && result.redirect !== "login?consent=true") {
+            throw new Error("Invalid logout response");
+        }
+        if (typeof sseWorkerPort !== "undefined" && sseWorkerPort !== null) {
+            sseWorkerPort.postMessage({ type: "shutdown" });
+        }
+        window.location.href = "./" + result.redirect;
+    } catch (error) {
+        logoutBusy = false;
+        console.error(error);
+        alert(t("common.error") + ": " + t("nav.logout"));
     }
-    window.location.href = "./logout";
 }
