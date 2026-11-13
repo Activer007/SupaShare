@@ -3,6 +3,7 @@ package errorHandling
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +14,13 @@ var tokens = make(map[string]DisplayedError)
 var mutex sync.RWMutex
 var cleanupOnce sync.Once
 
-const ttl = 5 * time.Minute
+const (
+	ttl                 = 5 * time.Minute
+	cleanupInterval     = time.Minute
+	maxErrorEntries     = 256
+	maxErrorEntryBytes  = 8 * 1024
+	errorEntryBaseBytes = 128
+)
 
 const WidthDefault = "20rem"
 const WidthWide = "30rem"
@@ -81,7 +88,7 @@ func RedirectGenericErrorPage(w http.ResponseWriter, r *http.Request, genericTyp
 	redirectToError(w, r, result)
 }
 
-func RedirectToOAuthErrorPage(w http.ResponseWriter, r *http.Request, errorMessage string, err error) {
+func RedirectToOAuthErrorPage(w http.ResponseWriter, r *http.Request, errorMessage string, _ error) {
 	if r.URL.Query().Get("error") == "access_denied" {
 		result := DisplayedError{
 			Title:     "error.accessDenied.title",
@@ -93,35 +100,39 @@ func RedirectToOAuthErrorPage(w http.ResponseWriter, r *http.Request, errorMessa
 		redirectToError(w, r, result)
 		return
 	}
-	if err != nil {
-		errorMessage = errorMessage + " " + err.Error()
-	}
+	// Provider diagnostics come from a public callback and may be arbitrarily
+	// large. Keep only the server-selected context needed by the error page.
 	result := DisplayedError{
-		Title:                r.URL.Query().Get("error"),
-		Message:              errorMessage,
-		OAuthProviderMessage: r.URL.Query().Get("error_description"),
-		expiry:               time.Now().Add(ttl).Unix(),
-		ErrorId:              TypeOAuthNonGeneric,
-		IsGeneric:            false,
+		Title:     "error.unknown.title",
+		Message:   errorMessage,
+		expiry:    time.Now().Add(ttl).Unix(),
+		ErrorId:   TypeOAuthNonGeneric,
+		IsGeneric: false,
 	}
 	redirectToError(w, r, result)
 }
 
 func redirectToError(w http.ResponseWriter, r *http.Request, displayedError DisplayedError) {
+	displayedError = boundedError(displayedError)
 	token := helper.GenerateRandomString(30)
 	mutex.Lock()
-	tokens[token] = displayedError
+	cleanupExpiredLocked(time.Now().Unix())
+	if len(tokens) >= maxErrorEntries {
+		token = ""
+	} else {
+		tokens[token] = displayedError
+	}
 	mutex.Unlock()
 
-	cleanupOnce.Do(func() {
-		go cleanup(true)
-	})
+	if token != "" {
+		cleanupOnce.Do(func() {
+			go cleanup(true)
+		})
+	}
 	http.Redirect(w, r, "./error?e="+token, http.StatusTemporaryRedirect)
 }
 
 func Get(r *http.Request) DisplayedError {
-	mutex.RLock()
-	defer mutex.RUnlock()
 	if !r.URL.Query().Has("e") {
 		return DisplayedError{
 			IsGeneric: true,
@@ -129,8 +140,13 @@ func Get(r *http.Request) DisplayedError {
 			CardWidth: WidthDefault,
 		}
 	}
+	mutex.Lock()
 	displayedError, ok := tokens[r.URL.Query().Get("e")]
-	if !ok {
+	if ok {
+		delete(tokens, r.URL.Query().Get("e"))
+	}
+	mutex.Unlock()
+	if !ok || displayedError.IsExpired() {
 		return DisplayedError{
 			Title:     "error.unknownID.title",
 			Message:   "error.unknownID.help",
@@ -140,17 +156,47 @@ func Get(r *http.Request) DisplayedError {
 	return displayedError
 }
 
-func cleanup(periodic bool) {
-	mutex.Lock()
+func boundedError(displayedError DisplayedError) DisplayedError {
+	remaining := maxErrorEntryBytes - errorEntryBaseBytes
+	for _, field := range []string{
+		displayedError.Title,
+		displayedError.Message,
+		displayedError.OAuthProviderMessage,
+		displayedError.CardWidth,
+	} {
+		if len(field) > remaining {
+			return DisplayedError{
+				Title:     "error.unknown.title",
+				Message:   "error.unknownID.help",
+				CardWidth: WidthWide,
+				expiry:    displayedError.expiry,
+			}
+		}
+		remaining -= len(field)
+	}
+	displayedError.Title = strings.Clone(displayedError.Title)
+	displayedError.Message = strings.Clone(displayedError.Message)
+	displayedError.OAuthProviderMessage = strings.Clone(displayedError.OAuthProviderMessage)
+	displayedError.CardWidth = strings.Clone(displayedError.CardWidth)
+	return displayedError
+}
+
+func cleanupExpiredLocked(now int64) {
 	for id, token := range tokens {
-		if token.IsExpired() {
+		if token.expiry < now {
 			delete(tokens, id)
 		}
 	}
-	mutex.Unlock()
-	if periodic {
-		time.Sleep(time.Hour)
-		go cleanup(true)
-	}
+}
 
+func cleanup(periodic bool) {
+	for {
+		mutex.Lock()
+		cleanupExpiredLocked(time.Now().Unix())
+		mutex.Unlock()
+		if !periodic {
+			return
+		}
+		time.Sleep(cleanupInterval)
+	}
 }
