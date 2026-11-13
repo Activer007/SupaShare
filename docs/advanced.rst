@@ -447,6 +447,12 @@ Uploading a directory
 
 By running ``supashare-cli upload-dir -D /path/to/directory/``, supashare-cli compresses the given folder as a zip file and then uploads it. By default the foldername is used for the name of the zip file. Also the file is encrypted (if enabled) and stored without any expiration.
 
+The selected tree must contain regular files and directories. A symbolic link
+or special file observed during validation causes archive creation to fail.
+Remove the link or deliberately copy its intended contents into the tree before
+retrying. Empty directories are included. Detected entry replacement and ZIP
+write or close errors abort archive creation and trigger temporary-file cleanup.
+
 In addition to all the options seen in chapter :ref:`clitool-upload-file`, the following optional options are also available:
 
 +------------------------------------+---------------------------------------------------+
