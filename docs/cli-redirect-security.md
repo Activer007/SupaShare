@@ -35,3 +35,27 @@ This addresses security finding `acf_02747315bece43421d75cd61a7c219f9`
 file decryption. Existing exposed API keys should be revoked and replaced by
 an administrator; upgrading the CLI cannot revoke keys already copied into
 storage/proxy logs.
+
+## Local verification
+
+On macOS amd64 with Go 1.26.10, CLI-wide tests, cliapi race tests, 20 repeated
+rounds of the focused redirect regressions, CLI vet and a native CLI build
+passed. Coverage includes 301/302/303/307/308, same-origin authentication and
+POST compatibility, cross-origin control requests, HTTPS downgrade rejection,
+userinfo/scheme rejection, the redirect limit and existing timeout values.
+The return-hop checks cover API keys, passwords, Authorization, Cookie,
+Referer and future application headers. Completion is also exercised through
+the actual `completeChunk` entry point.
+
+A native CLI binary was exercised against two loopback HTTP servers with
+synthetic configuration, keys, passwords and temporary files. The download
+followed a signed-query redirect to storage and returned to the API origin
+with inherited headers cleared, producing the expected file bytes. An upload
+completion redirect failed after the synthetic password reached the trusted
+API, and the cross-origin target received no request.
+
+On the macOS host, Windows amd64 CLI cross-build/vet and cliapi-test
+cross-compilation passed, as did a macOS arm64 CLI cross-build. Native Windows
+and macOS arm64 runs remain unverified. Live S3 integration and production
+services were outside this local verification. The earlier cloud CLI tests,
+cliapi race/repetition and vet results apply to the supplied patch separately.

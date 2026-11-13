@@ -94,8 +94,10 @@ func TestDownloadRedirectChains(t *testing.T) {
 					}
 					http.Redirect(w, r, storage.URL+"/first?signature=synthetic", code)
 				case "/return":
-					if r.Header.Get("apikey") != "" || r.Header.Get("password") != "" {
-						t.Error("credentials restored on return")
+					for _, h := range []string{"apikey", "password", "Authorization", "Cookie", "Referer", "X-Future-Secret"} {
+						if r.Header.Get(h) != "" {
+							t.Errorf("return hop restored %s", h)
+						}
 					}
 					io.WriteString(w, "file")
 				}
@@ -211,6 +213,10 @@ func TestAPIEntryPointsRejectCrossOrigin(t *testing.T) {
 		Init(source.URL, "synthetic", nil)
 		if _, err := getUrl(gokapiUrl+"/chunk/complete", []header{{"password", "synthetic-password"}}, false); err == nil {
 			t.Error("getUrl accepted cross-origin")
+		}
+		if _, err := completeChunk("synthetic-uuid", "synthetic.txt", 14, 14, false,
+			cliflags.FlagConfig{Password: "synthetic-password", JsonOutput: true}, nil); err == nil {
+			t.Error("completeChunk accepted cross-origin")
 		}
 		if err := uploadChunk(strings.NewReader("synthetic-file"), "synthetic-uuid", 0, 14, 14, nil); err == nil {
 			t.Error("uploadChunk accepted cross-origin")
