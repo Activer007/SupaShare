@@ -132,7 +132,7 @@ func TestCredentialWriteFailurePreservesOldFile(t *testing.T) {
 
 func TestCredentialDefaultIgnoresWorkingDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("XDG-specific test")
+		t.Skip("Unix path and permission regression")
 	}
 	dir := privateTestDir(t)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
@@ -144,9 +144,19 @@ func TestCredentialDefaultIgnoresWorkingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPathLocation = ""
-	expected := filepath.Join(dir, "xdg", "supashare", "gokapi-cli.json")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(configDir, "supashare", "gokapi-cli.json")
 	if getConfigPath() != expected {
 		t.Fatalf("unexpected default: %s", getConfigPath())
+	}
+	if runtime.GOOS == "darwin" {
+		// macOS ignores XDG_CONFIG_HOME. Verify its native selection above, then
+		// isolate default-directory creation from the real user's credentials.
+		expected = filepath.Join(dir, "user-config", "supashare", "gokapi-cli.json")
+		configPathLocation = expected
 	}
 	if err := save("https://example.invalid", "synthetic-key", nil); err != nil {
 		t.Fatal(err)

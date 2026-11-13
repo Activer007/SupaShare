@@ -340,6 +340,11 @@ You will be prompted to provide your server URL, an API key with upload permissi
   Unix credentials are replaced with a new 0600 file, never written through
   an existing inode. Symlinks and non-regular credential files are rejected.
   Directory ownership and write permissions are checked before access.
+  macOS also checks extended ACLs on files, the immediate directory and its
+  ancestors. Inherited read grants are rejected before creating a temporary
+  credential file, and the new file's ACL is checked through its descriptor
+  before writing content. Safe deny-only ACLs are supported. The conservative
+  ACL checks can reject custom managed directories even when their mode is 0700.
   Windows uses native ACL checks/protection, not Unix chmod as an ACL substitute.
   Network filesystems must honor the platform's access-control and rename semantics.
 

@@ -9,6 +9,13 @@ import (
 )
 
 func platformCheck(path string, info os.FileInfo, directory bool) error {
+	if err := checkUnixOwnerAndMode(path, info, directory); err != nil {
+		return err
+	}
+	return checkUnixACL(path, false)
+}
+
+func checkUnixOwnerAndMode(path string, info os.FileInfo, directory bool) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return fmt.Errorf("cannot verify credential owner: %s", path)
@@ -26,8 +33,16 @@ func platformCheck(path string, info os.FileInfo, directory bool) error {
 	}
 	return nil
 }
-func platformSecureFile(file *os.File) error { return file.Chmod(0600) }
+func platformSecureFile(file *os.File) error {
+	if err := file.Chmod(0600); err != nil {
+		return err
+	}
+	return checkUnixFileACL(file)
+}
 
 func platformCheckAncestor(path string, info os.FileInfo, directory bool) error {
-	return platformCheck(path, info, directory)
+	if err := checkUnixOwnerAndMode(path, info, directory); err != nil {
+		return err
+	}
+	return checkUnixACL(path, true)
 }
