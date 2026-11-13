@@ -139,6 +139,26 @@ func MigrateChecked(ctx context.Context, configOld, configNew models.DbConnectio
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	oidcVersion := 20
+	if dbOld.GetType() == dbabstraction.TypeRedis {
+		oidcVersion = 12
+	}
+	identities, err := dbOld.ListOIDCIdentities()
+	if err != nil {
+		if dbOld.GetDbVersion() >= oidcVersion || !errors.Is(err, uploadquota.ErrNotFound) {
+			return err
+		}
+		identities = nil
+	}
+	for _, identity := range identities {
+		user, ok, err := dbOld.GetOIDCUser(identity.Issuer, identity.Subject)
+		if err != nil {
+			return err
+		}
+		if !ok || user.Id != identity.UserID {
+			return models.ErrOIDCInvalidIdentity
+		}
+	}
 	dbNew, err := dbabstraction.GetNew(configNew)
 	if err != nil {
 		return err
@@ -165,6 +185,14 @@ func MigrateChecked(ctx context.Context, configOld, configNew models.DbConnectio
 		}
 		dbNew.SaveUser(user, false)
 		dbNew.SaveEnd2EndInfo(dbOld.GetEnd2EndInfo(user.Id), user.Id)
+	}
+	for _, identity := range identities {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := dbNew.BindOIDCIdentity(identity.Issuer, identity.Subject, identity.UserID); err != nil {
+			return err
+		}
 	}
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {

@@ -2,8 +2,10 @@ package oauth
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,12 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/Activer007/SupaShare/internal/configuration"
+	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/test"
 	"github.com/Activer007/SupaShare/internal/test/testconfiguration"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
@@ -36,11 +39,13 @@ func TestMain(m *testing.M) {
 // mockOIDCServer is a self-contained fake OIDC provider.
 // It serves the discovery document, JWKS, token, and userinfo endpoints.
 type mockOIDCServer struct {
-	server      *httptest.Server
-	privateKey  *rsa.PrivateKey
-	userEmail   string
-	userSubject string
-	tokenValid  bool
+	server           *httptest.Server
+	privateKey       *rsa.PrivateKey
+	userEmail        string
+	userSubject      string
+	tokenValid       bool
+	tokenSubject     string
+	invalidSignature bool
 }
 
 func newMockOIDCServer() *mockOIDCServer {
@@ -114,27 +119,35 @@ func (m *mockOIDCServer) handleToken(w http.ResponseWriter, r *http.Request) {
 
 func (m *mockOIDCServer) handleUserinfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]any{
-		"sub":   m.userSubject,
-		"email": m.userEmail,
+		"sub":            m.userSubject,
+		"email":          m.userEmail,
+		"email_verified": true,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(info)
 }
 
-// buildIDToken builds a minimal unsigned-style ID token. Since our tests
-// don't verify the signature path (we rely on the userinfo endpoint), we
-// use a simple base64-encoded JSON payload wrapped in a fake JWT envelope.
+// buildIDToken signs the synthetic ID token with the fixture JWKS key.
 func (m *mockOIDCServer) buildIDToken() string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"test-key"}`))
 	payload, _ := json.Marshal(map[string]any{
 		"iss":   m.server.URL,
-		"sub":   m.userSubject,
+		"sub":   m.idTokenSubject(),
 		"email": m.userEmail,
 		"aud":   []string{"test-client"},
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
-	return header + "." + base64.RawURLEncoding.EncodeToString(payload) + ".fakesig"
+	input := header + "." + base64.RawURLEncoding.EncodeToString(payload)
+	digest := sha256.Sum256([]byte(input))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, m.privateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		panic(err)
+	}
+	if m.invalidSignature {
+		signature[0] ^= 0xff
+	}
+	return input + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
 func TestInit_WithoutGroupScope(t *testing.T) {
@@ -317,14 +330,32 @@ func TestHandlerCallback_EmptyEmail(t *testing.T) {
 func TestHandlerCallback_Success(t *testing.T) {
 	mock := newMockOIDCServer()
 	defer mock.Close()
-	initWithMock(mock)
-
+	credentials := models.AuthenticationConfig{Method: models.AuthenticationOAuth2, OAuthProvider: mock.URL(), OAuthClientId: "test-client", OAuthClientSecret: "test-secret", OAuthRecheckInterval: 1}
+	authentication.Init(credentials)
+	Init(mock.URL()+"/", credentials)
 	rr := httptest.NewRecorder()
 	HandlerCallback(rr, newRequest("/oauth-callback?state=mystate&code=validcode", "mystate"))
-
-	// Valid flow completes — should redirect somewhere (admin or error-auth depending on auth config)
-	test.IsEqualBool(t, rr.Code == http.StatusTemporaryRedirect || rr.Code == http.StatusFound, true)
-	test.IsNotEmpty(t, rr.Header().Get("Location"))
+	user, ok, err := database.GetOIDCUser(mock.URL(), mock.userSubject)
+	if err != nil || !ok {
+		t.Fatalf("verified callback did not provision bound identity: %v", err)
+	}
+	t.Cleanup(func() { database.DeleteAllSessionsByUser(user.Id); database.DeleteUser(user.Id) })
+	if !strings.HasSuffix(rr.Header().Get("Location"), "admin") {
+		t.Fatal("verified callback did not redirect to admin")
+	}
+	found := false
+	for _, cookie := range rr.Result().Cookies() {
+		if cookie.Name == "session_token" {
+			session, exists := database.GetSession(cookie.Value)
+			if !exists || session.UserId != user.Id {
+				t.Fatal("wrong user session")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing authenticated session")
+	}
 }
 
 func TestIsLoginRequired(t *testing.T) {
@@ -360,4 +391,36 @@ func containsString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func (m *mockOIDCServer) idTokenSubject() string {
+	if m.tokenSubject != "" {
+		return m.tokenSubject
+	}
+	return m.userSubject
+}
+
+func TestCallbackRejectsUntrustedIdentity(t *testing.T) {
+	for _, scenario := range []string{"signature", "subject-mismatch"} {
+		t.Run(scenario, func(t *testing.T) {
+			mock := newMockOIDCServer()
+			defer mock.Close()
+			initWithMock(mock)
+			if scenario == "signature" {
+				mock.invalidSignature = true
+			} else {
+				mock.tokenSubject = "different-id-token-subject"
+			}
+			rr := httptest.NewRecorder()
+			HandlerCallback(rr, newRequest("/oauth-callback?state=s&code=validcode", "s"))
+			for _, cookie := range rr.Result().Cookies() {
+				if cookie.Name == "session_token" {
+					t.Fatal("invalid identity received session")
+				}
+			}
+			if !strings.Contains(rr.Header().Get("Location"), "error") {
+				t.Fatal("invalid identity not rejected")
+			}
+		})
+	}
 }

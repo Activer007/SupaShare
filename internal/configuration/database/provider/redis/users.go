@@ -91,5 +91,8 @@ func (p DatabaseProvider) UpdateUserLastOnline(id int) {
 
 // DeleteUser deletes a user with the given ID
 func (p DatabaseProvider) DeleteUser(id int) {
-	p.deleteKey(prefixUsers + strconv.Itoa(id))
+	conn := p.pool.Get()
+	defer conn.Close()
+	_, err := deleteOIDCUserScript.Do(conn, p.dbPrefix+oidcBindings, p.dbPrefix+oidcUsers, p.dbPrefix+prefixUsers+strconv.Itoa(id), id)
+	helper.Check(err)
 }
