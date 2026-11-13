@@ -68,6 +68,9 @@ func TestNewUserCollectionPermission(t *testing.T) {
 				if !ok || user.UserLevel != models.UserLevelUser || user.Permissions != scenario.permission || response.UserLevel != user.UserLevel || response.Permissions != user.Permissions {
 					t.Fatalf("new user must have only its default collection permission: found=%t rank=%d permissions=%d", ok, user.UserLevel, user.Permissions)
 				}
+				// This permission test starts after mandatory onboarding completes.
+				user.ResetPassword = false
+				database.SaveUser(user, false)
 				return user
 			}
 			collectionKey := func(user models.User) models.ApiKey {

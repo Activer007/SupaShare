@@ -1241,11 +1241,17 @@ func requireLogin(next http.HandlerFunc, isUiCall, isPwChangeView bool) http.Han
 			return
 		}
 		if isLoggedIn {
-			if user.ResetPassword && isUiCall && configuration.Get().Authentication.Method == models.AuthenticationInternal {
-				if !isPwChangeView {
+			// A reset-required session is only a password-change session, not a
+			// management credential. Apply confinement to non-UI endpoints too.
+			if authentication.RequiresPasswordChange(user) && !isPwChangeView {
+				if isUiCall {
 					redirect(w, r, "changePassword")
-					return
+				} else {
+					w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = io.WriteString(w, `{"Result":"error","ErrorMessage":"Password change required"}`)
 				}
+				return
 			}
 			r = authentication.SetUserInRequest(r, user)
 			next.ServeHTTP(w, r)

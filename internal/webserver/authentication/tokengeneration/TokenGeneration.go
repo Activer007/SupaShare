@@ -9,6 +9,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/api"
+	"github.com/Activer007/SupaShare/internal/webserver/authentication"
 )
 
 func containsApiPermission(requestedPermissions models.ApiPermission, containsPermission models.ApiPermission) bool {
@@ -17,6 +18,9 @@ func containsApiPermission(requestedPermissions models.ApiPermission, containsPe
 
 // Generate a temporary API key for the given user
 func Generate(user models.User, permission models.ApiPermission) (string, int64, error) {
+	if authentication.RequiresPasswordChange(user) {
+		return "", 0, errors.New("password change required")
+	}
 	if containsApiPermission(permission, models.ApiPermReplace) && !authorization.CanGrantAPI(user, models.ApiPermReplace) {
 		return "", 0, errors.New("user does not have permission to generate a token with PERM_REPLACE")
 	}
