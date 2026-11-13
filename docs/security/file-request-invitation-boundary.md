@@ -17,9 +17,16 @@ the owner/operator must assess and explicitly revoke/recreate that invitation;
 this patch cannot undo knowledge of an already disclosed bearer credential.
 
 Build through the repository's normal generation process (`go generate ./...`)
-so generated/minified management JavaScript reflects the source change. Generated
-WASM/minified files are not part of this patch. No new schema or migration.
+so generated/minified management JavaScript reflects the source change. The PR
+includes the regenerated tracked assets and their content-hash references.
+Generated WASM remains ignored by the repository. No new schema or migration.
 
 Acceptance: owner sees/copies an invitation; cross-owner list/detail/edit and
 HTML contain metadata but no invitation key; stored key remains unchanged.
 Use synthetic users/invitations for checks. No production credentials needed.
+
+Local integration adds `TestFileRequestInvitationHTTPAuthorization` through the
+real API `Process` entry point and extends `TestFileRequestInvitationHTML` through
+the authenticated page handler. These cover owner, cross-owner administrator,
+reader, editor and unrelated users, the API-key management bit and live user
+guest-upload grant, edit persistence, and preservation of stored invitations.
