@@ -107,9 +107,7 @@ func getUrl(url string, headers []header, longTimeout bool) (string, error) {
 	if longTimeout {
 		timeout = 30 * time.Minute
 	}
-	client := &http.Client{
-		Timeout: timeout,
-	}
+	client := newHTTPClient(timeout, false)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -288,7 +286,7 @@ func DownloadFile(downloadParams cliflags.FlagConfig) error {
 	}
 	req.Header.Add("apikey", apiKey)
 
-	client := &http.Client{}
+	client := newHTTPClient(0, true)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -439,7 +437,7 @@ func uploadChunk(f io.Reader, uuid string, offset, chunkSize, filesize int64, pr
 	r.ContentLength = dataSize
 	r.Header.Set("Content-Type", writer.FormDataContentType())
 	r.Header.Set("apikey", apiKey)
-	client := &http.Client{}
+	client := newHTTPClient(0, false)
 	resp, err := client.Do(r)
 
 	if err != nil {
@@ -575,7 +573,7 @@ func setE2eInfo(input models.E2EInfoEncrypted) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newHTTPClient(0, false).Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
