@@ -22,7 +22,7 @@ type DatabaseProvider struct {
 }
 
 // DatabaseSchemeVersion contains the version number to be expected from the current database. If lower, an upgrade will be performed
-const DatabaseSchemeVersion = 20
+const DatabaseSchemeVersion = 21
 
 // New returns an instance
 func New(dbConfig models.DbConnection) (DatabaseProvider, error) {
@@ -125,6 +125,11 @@ func (p DatabaseProvider) Upgrade(currentDbVersion int) {
 	}
 	if currentDbVersion < 20 {
 		helper.Check(p.initOIDCIdentities())
+		p.DeleteAllSessions()
+	}
+	if currentDbVersion < 21 {
+		helper.Check(p.initSessionLineage())
+		// Pre-upgrade rotations have no lineage. Require fresh logins.
 		p.DeleteAllSessions()
 	}
 	if currentDbVersion < 19 {
@@ -253,6 +258,7 @@ func (p DatabaseProvider) createNewDatabase() error {
 			"RenewAt"	INTEGER NOT NULL,
 			"ValidUntil"	INTEGER NOT NULL,
 			"UserId"	INTEGER NOT NULL,
+			"Successor" TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY("Id")
 		) WITHOUT ROWID;
 		CREATE TABLE "Users" (

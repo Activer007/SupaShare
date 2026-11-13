@@ -30,6 +30,11 @@ func getRecorder(cookies []test.Cookie) (*httptest.ResponseRecorder, *http.Reque
 }
 
 func TestIsValidSession(t *testing.T) {
+	// Use a realistic lifetime: the shared legacy fixture expires in 2038,
+	// beyond the replacement's 30-day lifetime and the lineage invariant.
+	renewal, _ := database.GetSession("needsRenewal")
+	renewal.ValidUntil = time.Now().Add(time.Hour).Unix()
+	database.SaveSession("needsRenewal", renewal)
 	user, ok := IsValidSession(getRecorder(nil))
 	test.IsEqualBool(t, ok, false)
 	user, ok = IsValidSession(getRecorder([]test.Cookie{{

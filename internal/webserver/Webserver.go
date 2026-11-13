@@ -129,6 +129,7 @@ func Start() {
 	mux.HandleFunc("/login", showLogin)
 	mux.HandleFunc("/logs", requireLogin(showLogs, true, false))
 	mux.HandleFunc("/logout", doLogout)
+	mux.HandleFunc("/logoutToken", logoutToken)
 	mux.HandleFunc("/publicUpload", showPublicUpload)
 	mux.HandleFunc("/r/{token}", showPublicUpload)
 	mux.HandleFunc("/uploadChunk", requireLogin(uploadChunk, false, false))
@@ -342,6 +343,23 @@ func serveE2EWasm(w http.ResponseWriter, r *http.Request) {
 
 // Handling of /logout
 func doLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !logoutSameOrigin(r) {
+		http.Error(w, "Cross-origin logout rejected", http.StatusForbidden)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if r.ParseForm() != nil || !csrftoken.IsValidBound(csrftoken.TypeLogout, r.PostForm.Get("csrf-token"), browserCSRFBinding(r)) {
+		http.Error(w, "Invalid logout token", http.StatusForbidden)
+		return
+	}
+	// Do not require a currently usable session: a rotation predecessor must
+	// still be able to revoke its successor through the session manager.
 	authentication.Logout(w, r)
 }
 

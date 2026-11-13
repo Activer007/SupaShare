@@ -328,7 +328,8 @@ func TestLogout(t *testing.T) {
 	test.IsEqualBool(t, ok, false)
 	_, ok = sessionmanager.IsValidSession(w, r, false, 0)
 	test.IsEqualBool(t, ok, false)
-	test.ResponseIsRedirect(t, w, "login", false)
+	test.IsEqualInt(t, w.Code, http.StatusSeeOther)
+	test.IsEqualString(t, w.Header().Get("Location"), "/login")
 
 	Init(modelOauth)
 	w, r, _, _ = getRecorder([]test.Cookie{{
@@ -342,7 +343,8 @@ func TestLogout(t *testing.T) {
 	test.IsEqualBool(t, ok, false)
 	_, ok = sessionmanager.IsValidSession(w, r, false, 0)
 	test.IsEqualBool(t, ok, false)
-	test.ResponseIsRedirect(t, w, "login?consent=true", false)
+	test.IsEqualInt(t, w.Code, http.StatusSeeOther)
+	test.IsEqualString(t, w.Header().Get("Location"), "/login?consent=true")
 }
 
 type testInfo struct {

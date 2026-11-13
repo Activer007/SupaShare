@@ -506,7 +506,8 @@ var sessionMutation sync.Mutex
 
 // GetSession returns the session with the given ID or false if not a valid ID
 func GetSession(id string) (models.Session, bool) {
-	return db.GetSession(id)
+	session, ok := db.GetSession(id)
+	return session, ok && session.Successor == ""
 }
 
 // SaveSession stores the given session. After the expiry passed, it will be deleted automatically
@@ -522,25 +523,44 @@ func RotateSession(id, replacementID string, expected, replacement models.Sessio
 	sessionMutation.Lock()
 	defer sessionMutation.Unlock()
 	current, ok := db.GetSession(id)
-	if !ok || current != expected || current.ValidUntil < time.Now().Unix() ||
+	if !ok || current.Successor != "" || replacement.Successor != "" || current != expected || current.ValidUntil < time.Now().Unix() ||
+		replacement.ValidUntil < current.ValidUntil ||
 		replacementID == "" || replacementID == id || replacement.UserId != current.UserId {
 		return false
 	}
 	if _, exists := db.GetSession(replacementID); exists {
 		return false
 	}
-	// Remove the old credential first: a storage failure must not leave two
-	// usable credentials. The caller issues a cookie only after success.
-	db.DeleteSession(id)
+	// Revoke the old credential before saving its successor. Keep an alias until
+	// its original cookie expires, so a browser still holding it can log out
+	// the replacement. Aliases never authenticate and survive process restarts.
+	current.Successor = replacementID
+	db.SaveSession(id, current)
 	db.SaveSession(replacementID, replacement)
 	return true
 }
 
-// DeleteSession deletes a session with the given ID
+// DeleteSession revokes a session and all of its rotated successors.
 func DeleteSession(id string) {
 	sessionMutation.Lock()
 	defer sessionMutation.Unlock()
-	db.DeleteSession(id)
+	// Read through the provider, not GetSession, which hides aliases. Keep the
+	// predecessor until its descendants are gone: a failed delete must not orphan
+	// a live successor. Rotation holds this same lock and cannot extend the chain.
+	var lineage []string
+	seen := make(map[string]bool)
+	for id != "" && !seen[id] {
+		seen[id] = true
+		session, ok := db.GetSession(id)
+		if !ok {
+			break
+		}
+		lineage = append(lineage, id)
+		id = session.Successor
+	}
+	for i := len(lineage) - 1; i >= 0; i-- {
+		db.DeleteSession(lineage[i])
+	}
 }
 
 // DeleteAllSessions logs all users out

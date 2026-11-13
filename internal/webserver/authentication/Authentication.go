@@ -376,11 +376,17 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	if authSettings.Method == models.AuthenticationInternal || authSettings.Method == models.AuthenticationOAuth2 {
 		sessionmanager.LogoutSession(w, r)
 	}
+	target := "login"
 	if authSettings.Method == models.AuthenticationOAuth2 {
-		http.Redirect(w, r, "login?consent=true", http.StatusTemporaryRedirect)
-	} else {
-		http.Redirect(w, r, "login", http.StatusTemporaryRedirect)
+		target = "login?consent=true"
 	}
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"redirect": target})
+		return
+	}
+	// A native POST form must navigate to login with GET, not replay its body.
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // IsLogoutAvailable returns true if a logout button should be shown with the current form of authentication

@@ -22,7 +22,7 @@ type DatabaseProvider struct {
 }
 
 // DatabaseSchemeVersion contains the version number to be expected from the current database. If lower, an upgrade will be performed
-const DatabaseSchemeVersion = 12
+const DatabaseSchemeVersion = 13
 
 // New returns an instance
 func New(dbConfig models.DbConnection) (DatabaseProvider, error) {
@@ -133,6 +133,10 @@ func newPool(config models.DbConnection) *redigo.Pool {
 
 // Upgrade migrates the DB to a new SupaShare version, if required
 func (p DatabaseProvider) Upgrade(currentDbVersion int) {
+	if currentDbVersion < 13 {
+		// Pre-upgrade rotations have no persisted revocation lineage.
+		p.DeleteAllSessions()
+	}
 	// < v2.0.0
 	if currentDbVersion < 5 {
 		fmt.Println("Error: SupaShare runs >=v2.0.0, but Database is <v2.0.0. Please update to v2.0.0 first.")

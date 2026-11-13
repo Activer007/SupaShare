@@ -332,14 +332,12 @@ func TestLogout(t *testing.T) {
 			Value: "logoutsession",
 		}},
 	})
-	// Logout
-	test.HttpPageResult(t, test.HttpTestConfig{
-		Url:         "http://localhost:53843/logout",
+	// Logout requires a browser-bound POST, never a navigable GET.
+	test.HttpPostRequest(t, test.HttpTestConfig{
+		Url: "http://localhost:53843/logout", Method: "POST", ResultCode: http.StatusSeeOther,
 		RedirectUrl: "login",
-		Cookies: []test.Cookie{{
-			Name:  "session_token",
-			Value: "logoutsession",
-		}},
+		PostValues:  []test.PostBody{{Key: "csrf-token", Value: csrftoken.GenerateBound(csrftoken.TypeLogout, sec023LegacyTestBinding)}},
+		Cookies:     []test.Cookie{{Name: "session_token", Value: "logoutsession"}, {Name: browserCSRFCookieName(), Value: sec023LegacyTestBinding}},
 	})
 	// Admin after logout
 	test.HttpPageResult(t, test.HttpTestConfig{
