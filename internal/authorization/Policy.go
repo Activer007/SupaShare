@@ -93,3 +93,13 @@ func CanGrantAPI(user models.User, requested models.ApiPermission) bool {
 func CanUseAPI(user models.User, key models.ApiKey, required models.ApiPermission) bool {
 	return key.UserId == user.Id && key.HasPermission(required) && CanGrantAPI(user, required)
 }
+
+// FileRequestForViewer returns a presentation-only copy. Reading or editing
+// another user's collection does not delegate its bearer upload capability.
+// Even administrative rank alone must not reveal another owner's invitation.
+func FileRequestForViewer(user models.User, request models.FileRequest) models.FileRequest {
+	if !validUser(user) || user.Id != request.UserId {
+		request.ApiKey = ""
+	}
+	return request
+}

@@ -964,7 +964,7 @@ func (u *AdminView) convertGlobalConfig(view int, user models.User) *AdminView {
 				continue
 			}
 			fileRequest.Files = sortMetaData(fileRequest.Files)
-			u.FileRequests = append(u.FileRequests, fileRequest)
+			u.FileRequests = append(u.FileRequests, authorization.FileRequestForViewer(user, fileRequest))
 		}
 	}
 
