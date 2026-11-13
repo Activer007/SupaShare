@@ -50,6 +50,11 @@ func useSession(w http.ResponseWriter, id string, session models.Session, isOaut
 	}
 	if session.RenewAt < time.Now().Unix() {
 		replacementID, replacement := buildSession(isOauth, OAuthRecheckInterval, session.UserId)
+		if isOauth {
+			// Rotation is not a fresh identity/group check. Keep the deadline
+			// established by the authenticated login, including in the cookie.
+			replacement.ValidUntil = session.ValidUntil
+		}
 		if !database.RotateSession(id, replacementID, session, replacement) {
 			return false
 		}
