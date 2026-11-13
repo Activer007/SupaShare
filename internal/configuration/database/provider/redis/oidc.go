@@ -70,10 +70,23 @@ func (p DatabaseProvider) GetOIDCUser(issuer, subject string) (models.User, bool
 	return u, true, nil
 }
 
+// Read both indexes in one snapshot so migration cannot omit an inverse-only
+// binding or export a forward entry whose owner index points elsewhere.
+var listOIDCIdentitiesScript = redigo.NewScript(2, `
+ local forward = redis.call('HGETALL',KEYS[1])
+ local inverse = redis.call('HGETALL',KEYS[2])
+ if #forward ~= #inverse then return redis.error_reply('inconsistent OIDC binding indexes') end
+ for n = 1,#forward,2 do
+  if redis.call('HGET',KEYS[2],forward[n+1]) ~= forward[n] then
+   return redis.error_reply('inconsistent OIDC binding indexes')
+  end
+ end
+ return forward`)
+
 func (p DatabaseProvider) ListOIDCIdentities() ([]models.OIDCIdentity, error) {
 	conn := p.pool.Get()
 	defer conn.Close()
-	entries, err := redigo.StringMap(conn.Do("HGETALL", p.dbPrefix+oidcBindings))
+	entries, err := redigo.StringMap(listOIDCIdentitiesScript.Do(conn, p.dbPrefix+oidcBindings, p.dbPrefix+oidcUsers))
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +101,7 @@ func (p DatabaseProvider) ListOIDCIdentities() ([]models.OIDCIdentity, error) {
 			return nil, err
 		}
 		identity := models.OIDCIdentity{Issuer: tuple[0], Subject: tuple[1], UserID: id}
-		if !identity.Valid() {
+		if !identity.Valid() || key != oidcKey(identity.Issuer, identity.Subject) {
 			return nil, models.ErrOIDCInvalidIdentity
 		}
 		result = append(result, identity)
@@ -117,7 +130,13 @@ var createOIDCUserScript = redigo.NewScript(3, `
    end
   end
  until cursor == '0'
- local id=tostring(redis.call('INCR',KEYS[3]))
+ -- Redis integers are exact decimal strings. Lua numbers can round user IDs
+ -- or stringify them in exponent notation before Go reads the script result.
+ redis.call('INCR',KEYS[3])
+ local id=redis.call('GET',KEYS[3])
+ if not string.match(id,'^[1-9][0-9]*$') or #id > #ARGV[5] or (#id == #ARGV[5] and id > ARGV[5]) then
+  return redis.error_reply('OIDC user ID exceeds the supported range')
+ end
  local userkey=ARGV[2]..id
  if redis.call('EXISTS',userkey)==1 or redis.call('HEXISTS',KEYS[2],id)==1 then return 0 end
  redis.call('HSET',userkey,'id',id,'Name',ARGV[3],'Permissions',ARGV[4],'UserLevel','2','LastOnline','0','Password','','ResetPassword','0')
@@ -132,7 +151,8 @@ func (p DatabaseProvider) CreateOIDCUser(issuer, subject, name string, permissio
 	}
 	conn := p.pool.Get()
 	defer conn.Close()
-	id, err := redigo.Int(createOIDCUserScript.Do(conn, p.dbPrefix+oidcBindings, p.dbPrefix+oidcUsers, p.dbPrefix+prefixUserIdCounter, oidcKey(issuer, subject), p.dbPrefix+prefixUsers, name, permissions))
+	maxUserID := strconv.Itoa(int(^uint(0) >> 1))
+	id, err := redigo.Int(createOIDCUserScript.Do(conn, p.dbPrefix+oidcBindings, p.dbPrefix+oidcUsers, p.dbPrefix+prefixUserIdCounter, oidcKey(issuer, subject), p.dbPrefix+prefixUsers, name, permissions, maxUserID))
 	if err != nil {
 		return models.User{}, err
 	}

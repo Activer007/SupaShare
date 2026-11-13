@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,8 @@ type mockOIDCServer struct {
 	tokenValid       bool
 	tokenSubject     string
 	invalidSignature bool
+	omitIDToken      bool
+	tokenClaims      map[string]any
 }
 
 func newMockOIDCServer() *mockOIDCServer {
@@ -111,7 +114,9 @@ func (m *mockOIDCServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		"access_token": "mock-access-token",
 		"token_type":   "Bearer",
 		"expires_in":   3600,
-		"id_token":     m.buildIDToken(),
+	}
+	if !m.omitIDToken {
+		resp["id_token"] = m.buildIDToken()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -130,14 +135,18 @@ func (m *mockOIDCServer) handleUserinfo(w http.ResponseWriter, r *http.Request) 
 // buildIDToken signs the synthetic ID token with the fixture JWKS key.
 func (m *mockOIDCServer) buildIDToken() string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"test-key"}`))
-	payload, _ := json.Marshal(map[string]any{
+	claims := map[string]any{
 		"iss":   m.server.URL,
 		"sub":   m.idTokenSubject(),
 		"email": m.userEmail,
 		"aud":   []string{"test-client"},
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
-	})
+	}
+	for name, value := range m.tokenClaims {
+		claims[name] = value
+	}
+	payload, _ := json.Marshal(claims)
 	input := header + "." + base64.RawURLEncoding.EncodeToString(payload)
 	digest := sha256.Sum256([]byte(input))
 	signature, err := rsa.SignPKCS1v15(rand.Reader, m.privateKey, crypto.SHA256, digest[:])
@@ -420,6 +429,75 @@ func TestCallbackRejectsUntrustedIdentity(t *testing.T) {
 			}
 			if !strings.Contains(rr.Header().Get("Location"), "error") {
 				t.Fatal("invalid identity not rejected")
+			}
+		})
+	}
+}
+
+func TestCallbackRejectsInvalidIDTokenClaims(t *testing.T) {
+	temporaryDB, err := sql.Open("sqlite", strings.TrimPrefix(testconfiguration.SqliteUrl, "sqlite://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { temporaryDB.Close() })
+	countSessions := func(t *testing.T) int {
+		t.Helper()
+		var count int
+		if err := temporaryDB.QueryRow("SELECT COUNT(*) FROM Sessions").Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	oldAuth := configuration.Get().Authentication
+	oldConfig, oldProvider, oldContext, oldIssuer := config, provider, ctx, issuer
+	t.Cleanup(func() {
+		configuration.Get().Authentication = oldAuth
+		authentication.Init(oldAuth)
+		config, provider, ctx, issuer = oldConfig, oldProvider, oldContext, oldIssuer
+	})
+	for _, scenario := range []struct {
+		name   string
+		omit   bool
+		claims map[string]any
+	}{
+		{name: "missing-id-token", omit: true},
+		{name: "issuer", claims: map[string]any{"iss": "https://other-provider.invalid"}},
+		{name: "audience", claims: map[string]any{"aud": []string{"another-client"}}},
+		{name: "expired", claims: map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			mock := newMockOIDCServer()
+			defer mock.Close()
+			mock.omitIDToken = scenario.omit
+			mock.tokenClaims = scenario.claims
+			mock.userEmail = "rejected-" + scenario.name + "@example.invalid"
+			credentials := models.AuthenticationConfig{
+				Method: models.AuthenticationOAuth2, OAuthProvider: mock.URL(),
+				OAuthClientId: "test-client", OAuthClientSecret: "test-secret", OAuthRecheckInterval: 1,
+			}
+			configuration.Get().Authentication = credentials
+			authentication.Init(credentials)
+			Init(mock.URL()+"/", credentials)
+			beforeUsers := len(database.GetAllUsers())
+			beforeSessions := countSessions(t)
+			rr := httptest.NewRecorder()
+			HandlerCallback(rr, newRequest("/oauth-callback?state=s&code=validcode", "s"))
+			if !strings.Contains(rr.Header().Get("Location"), "error") {
+				t.Fatal("invalid ID token did not reject callback")
+			}
+			for _, cookie := range rr.Result().Cookies() {
+				if cookie.Name == "session_token" {
+					t.Fatal("invalid ID token issued a session")
+				}
+			}
+			if len(database.GetAllUsers()) != beforeUsers {
+				t.Fatal("invalid ID token created a local account")
+			}
+			if countSessions(t) != beforeSessions {
+				t.Fatal("invalid ID token persisted a session")
+			}
+			if _, bound, err := database.GetOIDCUser(mock.URL(), mock.userSubject); err != nil || bound {
+				t.Fatalf("invalid ID token created an identity binding: bound=%v err=%v", bound, err)
 			}
 		})
 	}
