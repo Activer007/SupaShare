@@ -19,6 +19,7 @@
       <a id="downloadbutton" class="btn btn-primary text-white" href="./downloadFile?id={{.Id}}" onclick="Download(this);">{{.UI.T "download.action"}}</a>
     {{end}}
   </div>
+  {{if .ClientSideDecryption}}<p id="downloadHttpWarning" class="text-warning" hidden>{{.UI.T "download.httpWarning"}}</p>{{end}}
   <p id="downloadStatus" class="download-state" role="status"></p>
   <div id="errordiv" class="public-form-error" style="display:none" role="alert">
     <div id="errormessage"></div><p class="mt-2 mb-0">{{.UI.T "download.reopenHelp"}}</p>
@@ -26,7 +27,7 @@
 </section>
 {{ if .ClientSideDecryption }}
         <script src="./js/min/polyfill.min.js"></script>
-        <script src="./js/min/streamsaver.min.js"></script>
+        <script src="./js/min/streamsaver.min.js?v={{ template "js_e2eversion"}}"></script>
         <script src="./js/min/wasm_exec.min.js"></script>
         
         <script>
@@ -41,6 +42,7 @@
 
         async function initialiseDownload() {
             try {
+                if (!window.isSecureContext) document.getElementById("downloadHttpWarning").hidden = false;
                 const response = await fetch(WASM_URL);
                 if (!response.ok) throw new Error(t("download.initialiseFailed"));
                 const obj = 'instantiateStreaming' in WebAssembly
@@ -77,16 +79,11 @@
                 
                 const readableStream = response.body;
                 reader = response.body.getReader();
-                {{ if .UsesHttps }}
-                streamSaver.mitm = './serviceworker/index.html';
-                {{ else }}
-                console.log("SupaShare is not being accessed through https, therefore an external serviceworker will be used");
-                streamSaver.mitm = 'https://forceu.github.io/Gokapi/internal/webserver/web/static/serviceworker/index.html';
-                {{ end }}
+                streamSaver.mitm = './serviceworker/index.html?v={{ template "js_e2eversion"}}';
                 {{ if .EndToEndEncryption }}
-                const fileStream = streamSaver.createWriteStream(filename);
+                const fileStream = streamSaver.createWriteStream(filename, {blobLimitMessage: t("download.httpLimit")});
                 {{ else }}
-                const fileStream = streamSaver.createWriteStream({{.Name }});
+                const fileStream = streamSaver.createWriteStream({{.Name }}, {blobLimitMessage: t("download.httpLimit")});
                 {{ end }}
                          
                 writer = fileStream.getWriter();

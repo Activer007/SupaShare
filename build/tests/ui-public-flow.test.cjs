@@ -27,38 +27,27 @@ test('download upload time includes the browser offset and preserves missing-dat
     }
 });
 
-test('key backup waits for output close and allows retry after write or close failure', async () => {
+test('key backup downloads a local Blob and allows retry after browser API failure', async () => {
     const template = read('html_end2end.tmpl');
     const script = template.slice(template.indexOf('async function downloadKey('), template.indexOf('function newKey()'));
-    for (const failure of [null, 'write', 'close']) {
-        let releaseClose, error;
+    for (const failure of [null, 'create', 'click']) {
+        let error, cleanup, blob;
         const calls = [];
         const elements = {downpw:{}, genbutton:{}, errordiv:{style:{}}};
-        const writer = {
-            async write(bytes) { calls.push('write'); assert.equal(new TextDecoder().decode(bytes), 'synthetic-key'); if (failure === 'write') throw new Error('write failed'); },
-            async close() { calls.push('close'); if (failure === 'close') throw new Error('close failed'); await new Promise(resolve => { releaseClose = resolve; }); },
-            async abort() { calls.push('abort'); }
-        };
-        const context = vm.createContext({TextEncoder, window:{gokapiBackupPending:true}, document:{getElementById:id=>elements[id]},
-            streamSaver:{createWriteStream:()=>({getWriter:()=>writer})}, displayError:value=>error=value, t:key=>key});
+        const link = {click(){ calls.push('click'); if(failure==='click') throw new Error('click failed'); },remove(){calls.push('remove')}};
+        const context = vm.createContext({TextEncoder,Blob,window:{gokapiBackupPending:true},
+            document:{getElementById:id=>elements[id],createElement:()=>link,body:{appendChild(){}}},
+            URL:{createObjectURL(value){blob=value;if(failure==='create')throw new Error('create failed');return 'blob:local';},revokeObjectURL(url){assert.equal(url,'blob:local');calls.push('revoke');}},
+            setTimeout(fn){cleanup=fn;},displayError:value=>error=value,t:key=>key});
         vm.runInContext(script,context);
-        const pending = context.downloadKey('synthetic-key');
-        assert.equal(elements.downpw.disabled,true);
-        assert.equal(elements.genbutton.disabled,true);
-        assert.equal(context.window.gokapiBackupPending,true);
-        if (!failure) {
-            await new Promise(resolve=>setImmediate(resolve));
-            assert.equal(context.window.gokapiTransferBusy,true);
-            assert.equal(context.window.gokapiBackupPending,true);
-            releaseClose();
-        }
-        await pending;
+        await context.downloadKey('synthetic-key');
+        assert.equal(await blob.text(),'synthetic-key');
         assert.equal(context.window.gokapiBackupPending,!!failure);
         assert.equal(context.window.gokapiTransferBusy,false);
         assert.equal(elements.downpw.disabled,false);
         assert.equal(elements.genbutton.disabled,false);
         assert.equal(!!error,!!failure);
-        assert.deepEqual(calls,failure === 'write' ? ['write','abort'] : failure === 'close' ? ['write','close','abort'] : ['write','close']);
+        if(failure!=='create'){assert.equal(link.download,'SupaShareE2E.txt');cleanup();assert.ok(calls.includes('revoke'));}
     }
 });
 

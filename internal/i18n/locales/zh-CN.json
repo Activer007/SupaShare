@@ -641,6 +641,8 @@
   "login.back": "返回登录",
   "download.passwordHelp": "请输入分享者提供的密码以访问文件。",
   "error.requestNewLink": "请联系分享者获取新的链接。",
+  "download.httpWarning": "开发 HTTP 模式：解密文件仅在本浏览器保存，上限 64 MiB。HTTP 无法防范网络篡改；敏感或更大文件请使用 HTTPS。",
+  "download.httpLimit": "HTTP 加密下载上限为 64 MiB，下载已取消；此文件请通过 HTTPS 下载。",
   "download.initialiseFailed": "无法加载解密组件。",
   "download.transferring": "正在解密并传输，请保持页面打开。",
   "download.transferred": "传输已完成，请查看浏览器下载列表。",
