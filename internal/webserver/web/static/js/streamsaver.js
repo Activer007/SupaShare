@@ -20,7 +20,7 @@
   const ponyfill = global.WebStreamsPolyfill || {}
   const isSecureContext = global.isSecureContext
   // TODO: Must come up with a real detection test (#69)
-  let useBlobFallback = /constructor/i.test(global.HTMLElement) || !!global.safari || !!global.WebKitPoint
+  let useBlobFallback = !isSecureContext || /constructor/i.test(global.HTMLElement) || !!global.safari || !!global.WebKitPoint
   const downloadStrategy = isSecureContext || 'MozAppearance' in document.documentElement.style
     ? 'iframe'
     : 'navigate'
@@ -30,7 +30,7 @@
     WritableStream: global.WritableStream || ponyfill.WritableStream,
     supported: true,
     version: { full: '2.0.5', major: 2, minor: 0, dot: 5 },
-    mitm: 'https://jimmywarting.github.io/StreamSaver.js/mitm.html?version=2.0.0'
+    mitm: new URL('./serviceworker/index.html', location.href).href
   }
 
   /**
@@ -78,7 +78,7 @@
     }
 
     const onReady = evt => {
-      if (evt.source === popup.frame) {
+      if (evt.source === popup.frame && evt.origin === location.origin) {
         popup.loaded = true
         global.removeEventListener('message', onReady)
         popup.dispatchEvent(new Event('load'))
@@ -131,6 +131,12 @@
    * @return {WritableStream<Uint8Array>}
    */
   function createWriteStream (filename, options, size) {
+    // Remote HTTP uses a local, bounded Blob, never an external helper.
+    const helperURL = new URL(streamSaver.mitm, location.href)
+    if (helperURL.origin !== location.origin || !/^https?:$/.test(helperURL.protocol)) {
+      throw new Error('Cross-origin download helpers are not permitted.')
+    }
+
     let opts = {
       size: null,
       pathname: null,
@@ -179,7 +185,7 @@
         response.headers['Content-Length'] = opts.size
       }
 
-      const args = [ response, '*', [ channel.port2 ] ]
+      const args = [ response, location.origin, [ channel.port2 ] ]
 
       if (supportsTransferable) {
         const transformer = downloadStrategy === 'iframe' ? undefined : {
@@ -215,6 +221,12 @@
       channel.port1.onmessage = evt => {
         // Service worker sent us a link that we should open.
         if (evt.data.download) {
+          const download = new URL(evt.data.download, location.href)
+          if (download.origin !== location.origin || !/^https?:$/.test(download.protocol)) {
+            channel.port1.postMessage('abort')
+            channel.port1.close()
+            return
+          }
           // Special treatment for popup...
           if (downloadStrategy === 'navigate') {
             mitmTransporter.remove()
@@ -269,6 +281,12 @@
           //
           // even though it has everything it fails to download anything
           // that comes from the service worker..!
+          // Bound the development HTTP fallback before retaining another chunk.
+          if (!isSecureContext && bytesWritten + chunk.byteLength > 64 * 1024 * 1024) {
+            chunks = []
+            throw new Error(opts.blobLimitMessage || 'HTTP downloads are limited to 64 MiB. Use HTTPS for larger encrypted files.')
+          }
+          bytesWritten += chunk.byteLength
           chunks.push(chunk)
           return
         }
@@ -295,15 +313,22 @@
         if (useBlobFallback) {
           const blob = new Blob(chunks, { type: 'application/octet-stream; charset=utf-8' })
           const link = document.createElement('a')
-          link.href = URL.createObjectURL(blob)
+          const objectURL = URL.createObjectURL(blob)
+          link.href = objectURL
           link.download = filename
-          link.click()
+          try {
+            link.click()
+          } finally {
+            chunks = []
+            setTimeout(() => URL.revokeObjectURL(objectURL), 60000)
+          }
         } else {
           channel.port1.postMessage('end')
         }
       },
       abort () {
         chunks = []
+        if (!channel) return // Blob fallback has no message channel.
         channel.port1.postMessage('abort')
         channel.port1.onmessage = null
         channel.port1.close()

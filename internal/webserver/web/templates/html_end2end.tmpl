@@ -2,7 +2,6 @@
 
  
 	<script src="./js/min/end2end_admin.min.{{ template "js_e2eversion"}}.js"></script>
-	<script src="./js/min/streamsaver.min.js"></script>
 	<script src="./js/min/wasm_exec.min.js"></script>
 	<script src="./js/min/admin.min.{{ template "js_admin_version"}}.js"></script>
 
@@ -29,17 +28,22 @@
         continueButton.disabled = true;
         window.gokapiTransferBusy = true;
         document.getElementById('errordiv').style.display = 'none';
-        let writer;
+        let objectURL;
         try {
             const bytes = new TextEncoder().encode(key);
-            writer = streamSaver.createWriteStream('SupaShareE2E.txt', {size: bytes.byteLength}).getWriter();
-            await writer.write(bytes);
-            await writer.close();
+            // A small secret backup stays local; no helper or service worker.
+            objectURL = URL.createObjectURL(new Blob([bytes], {type: 'text/plain'}));
+            const link = document.createElement('a');
+            link.href = objectURL;
+            link.download = 'SupaShareE2E.txt';
+            document.body.appendChild(link);
+            try { link.click(); } finally { link.remove(); }
             window.gokapiBackupPending = false;
         } catch (error) {
-            await Promise.allSettled([writer?.abort(error)]);
+
             displayError(error || t('download.transferFailed'));
         } finally {
+            if (objectURL) setTimeout(() => URL.revokeObjectURL(objectURL), 60000);
             window.gokapiTransferBusy = false;
             downloadButton.disabled = false;
             continueButton.disabled = false;

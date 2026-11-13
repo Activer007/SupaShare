@@ -32,7 +32,12 @@ let keepAlive = () => {
 // but since we need to wait for the Service Worker registration, we store the
 // message for later
 let messages = []
-window.onmessage = evt => messages.push(evt)
+function trustedSender(event) {
+  return event.origin === location.origin &&
+    ((window.parent !== window && event.source === window.parent) ||
+     (window.opener && event.source === window.opener))
+}
+window.onmessage = evt => { if (trustedSender(evt)) messages.push(evt) }
 
 let sw = null
 let scope = ''
@@ -59,6 +64,7 @@ function registerWorker() {
 
 // Now that we have the Service Worker registered we can process messages
 function onMessage (event) {
+  if (!trustedSender(event)) return
   let { data, ports, origin } = event
 
   // It's important to have a messageChannel, don't want to interfere
@@ -150,7 +156,7 @@ function onMessage (event) {
 if (window.opener) {
   // The opener can't listen to onload event, so we need to help em out!
   // (telling them that we are ready to accept postMessage's)
-  window.opener.postMessage('StreamSaver::loadedPopup', '*')
+  window.opener.postMessage('StreamSaver::loadedPopup', location.origin)
 }
 
 if (navigator.serviceWorker) {

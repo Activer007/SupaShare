@@ -641,6 +641,8 @@
   "login.back": "Back to login",
   "download.passwordHelp": "Enter the password provided by the sender to access this file.",
   "error.requestNewLink": "Ask the sender for a new link.",
+  "download.httpWarning": "Development HTTP mode: decrypted files stay in this browser and are limited to 64 MiB. HTTP cannot protect against network tampering; use HTTPS for sensitive or larger files.",
+  "download.httpLimit": "HTTP encrypted downloads are limited to 64 MiB. Download cancelled; use HTTPS for this file.",
   "download.initialiseFailed": "Unable to load the decryption component.",
   "download.transferring": "Decrypting and transferring. Keep this page open.",
   "download.transferred": "Transfer complete. Check your browser downloads.",
