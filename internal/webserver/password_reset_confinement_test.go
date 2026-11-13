@@ -192,8 +192,8 @@ func TestPasswordResetConfinementHTTP(t *testing.T) {
 			t.Fatalf("existing key escaped reset on %s: %d %s", path, res.StatusCode, body)
 		}
 	}
-	res, _ = request("/logout", nil, session, nil)
-	if res.StatusCode != http.StatusTemporaryRedirect {
+	res, _ = request("/logout", url.Values{"csrf-token": {csrftoken.GenerateBound(csrftoken.TypeLogout, sec023LegacyTestBinding)}}, session, nil)
+	if res.StatusCode != http.StatusSeeOther {
 		t.Fatal("reset-required logout blocked")
 	}
 	session = login("synthetic-old-password")
@@ -223,8 +223,8 @@ func TestPasswordResetConfinementHTTP(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("new session token: %d %s", res.StatusCode, body)
 	}
-	res, _ = request("/logout", nil, session, nil)
-	if res.StatusCode != http.StatusTemporaryRedirect {
+	res, _ = request("/logout", url.Values{"csrf-token": {csrftoken.GenerateBound(csrftoken.TypeLogout, sec023LegacyTestBinding)}}, session, nil)
+	if res.StatusCode != http.StatusSeeOther {
 		t.Fatal("logout blocked")
 	}
 	res, body = request("/api/files/list", nil, nil, map[string]string{"apikey": userKey.Id})

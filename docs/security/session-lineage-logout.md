@@ -44,3 +44,27 @@ Token issuance/logout deliberately do not require a currently authenticating ses
 Initial verification exposed a retry-unsafe schema column addition and a legacy 2038 renewal fixture. The migration now tolerates a column already added before version writeback, and the session fixture uses a realistic one-hour expiry. A panic from that initial run left disposable test data; it was removed before the successful clean regression. An initial generation attempt failed at VCS stamping; the full supported generation was rerun successfully with buildvcs disabled. These failures are not presented as passing checks.
 
 Not run: full webserver suite, actual browser visual/end-to-end testing, production deployment, real Redis failure/recovery or a real external identity provider. Local Codex should verify patch SHA and base, perform its review and required local UI checks, and create an ordinary PR only. No merge or next-group work is included in this handoff.
+
+## Local integration
+
+The local integration reused the cloud checks above. The existing PR #96 full
+password-reset regression still used GET logout at two points; both now send a
+browser-bound POST and expect 303. `TestPasswordResetConfinementHTTP` passed after
+this compatibility update. `go generate ./...` reproduced the supplied tracked
+assets, and a local noaws binary was built for browser verification.
+
+Chrome DevTools drove an isolated browser context at `http://127.0.0.1:53977/`
+using a disposable SQLite database and synthetic account. The dedicated Browser
+skill/runtime was unavailable in this session. At an 885 x 670 CSS-pixel viewport,
+page identity, meaningful rendering, absence of an error overlay and screenshots
+were checked. GET logout returned 405 and an invalid-token POST returned 403;
+the management page remained accessible. Clicking the actual account-menu logout
+fetched a token, POSTed successfully and navigated both the upload and collection
+tabs to login through the real SharedWorker path. The session table was empty
+afterward. Both final login pages had no console warnings/errors; the earlier
+negative probes produced the expected 405/403 resource messages. The local server
+was stopped after verification.
+
+This local browser check covers Internal authentication and one viewport. Real
+OAuth/IdP behavior, other browsers/viewports, production upgrade and real Redis
+failure/recovery remain unverified. No broad Go suite or race rerun was added.
