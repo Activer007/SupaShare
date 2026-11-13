@@ -45,3 +45,43 @@ Manual release checks should cover HTTPS/localhost streaming, remote HTTP small 
 large files, Chromium/Firefox/Safari, proxy subpaths, cancellation, and WASM payloads.
 No real user files, secrets, external helper requests or production deployment are
 needed for these checks.
+
+## Local review and verification
+
+Local review reproduced a pending writer after an invalid helper download URL in
+both the MessageChannel and transferable-stream paths, for source and minified
+assets. Invalid or malformed URLs and helper aborts now error the output stream,
+cancel pending writes and close both channel ports. Normal close waits for the
+validated download URL before releasing the channel, including when a small
+payload finishes before the helper is ready. Abort/retry and this close ordering
+have regression coverage. Blob failures also clear the output accumulator.
+
+The StreamSaver script and helper URL carry the generated asset version. The
+repository's version/minification generators refreshed the shared resource hash
+and bundled assets so an upgrade requests the patched resources.
+
+On macOS amd64 with Go 1.26.10, 135 Node tests passed, including 26 StreamSaver
+security tests. Both WASM modules built. Targeted Go download/template/UI and i18n
+checks passed. Source and production-minified JavaScript run the same security
+regressions.
+
+Browser plugin not available. Playwright used installed Google Chrome
+157.0.8103.78 with an isolated profile at 1414 x 900. Production templates, bundled
+scripts, WASM decryption and the same-origin helper were exercised with synthetic
+payloads and local fixture HTTP/auth responses. The remote-HTTP test hostname
+resolved only to loopback and had `isSecureContext === false`.
+
+Eight browser checks passed: remote HTTP small-file decryption, exactly 64 MiB,
+rejection of byte 64 MiB+1 without a partial download, trusted-loopback streaming,
+streaming under `/team`, invalid-helper error completion, plain download, and
+local key-backup export. Successful file bytes were checked with SHA-256. Requests
+were confined to the fixture origins. Page identity, rendered content and console
+output were checked; overflow and injected invalid-URL errors were expected. The
+fixture replaced dynamic favicon responses and the backup authentication endpoint.
+
+After all eight assertions and context cleanup completed, automatic Chrome process
+shutdown stalled. The isolated test process tree was terminated explicitly.
+Firefox/Safari, native HTTPS/proxy deployments and the full application
+authentication/storage/download-accounting flow remain unverified in this local
+browser run. These checks use synthetic fixtures and cover the browser transfer
+flow rather than a full deployment audit.

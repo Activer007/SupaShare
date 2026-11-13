@@ -27,7 +27,7 @@
 </section>
 {{ if .ClientSideDecryption }}
         <script src="./js/min/polyfill.min.js"></script>
-        <script src="./js/min/streamsaver.min.js"></script>
+        <script src="./js/min/streamsaver.min.js?v={{ template "js_e2eversion"}}"></script>
         <script src="./js/min/wasm_exec.min.js"></script>
         
         <script>
@@ -79,7 +79,7 @@
                 
                 const readableStream = response.body;
                 reader = response.body.getReader();
-                streamSaver.mitm = './serviceworker/index.html';
+                streamSaver.mitm = './serviceworker/index.html?v={{ template "js_e2eversion"}}';
                 {{ if .EndToEndEncryption }}
                 const fileStream = streamSaver.createWriteStream(filename, {blobLimitMessage: t("download.httpLimit")});
                 {{ else }}

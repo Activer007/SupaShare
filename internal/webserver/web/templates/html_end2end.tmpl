@@ -40,7 +40,6 @@
             try { link.click(); } finally { link.remove(); }
             window.gokapiBackupPending = false;
         } catch (error) {
-
             displayError(error || t('download.transferFailed'));
         } finally {
             if (objectURL) setTimeout(() => URL.revokeObjectURL(objectURL), 60000);

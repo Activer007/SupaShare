@@ -148,6 +148,37 @@
     let downloadUrl = null
     let channel = null
     let ts = null
+    let chunks = []
+    let outputController = null
+    let transformController = null
+    let outputError = null
+    let resolveDownload
+    let rejectDownload
+    const downloadReady = useBlobFallback ? null : new Promise((resolve, reject) => {
+      resolveDownload = resolve
+      rejectDownload = reject
+    })
+    if (downloadReady) downloadReady.catch(() => {})
+
+    function closeChannel (message) {
+      if (!channel) return
+      channel.port1.onmessage = null
+      if (message) channel.port1.postMessage(message)
+      channel.port1.close()
+      channel.port2.close()
+      channel = null
+    }
+
+    function failOutput (error) {
+      if (outputError) return
+      outputError = error
+      chunks = []
+      downloadUrl = null
+      if (transformController) transformController.error(error)
+      if (outputController) outputController.error(error)
+      if (rejectDownload) rejectDownload(error)
+      closeChannel('abort')
+    }
 
     // normalize arguments
     if (Number.isFinite(options)) {
@@ -188,7 +219,10 @@
       const args = [ response, location.origin, [ channel.port2 ] ]
 
       if (supportsTransferable) {
-        const transformer = downloadStrategy === 'iframe' ? undefined : {
+        const transformer = {
+          start (controller) { transformController = controller }
+        }
+        if (downloadStrategy !== 'iframe') Object.assign(transformer, {
           // This transformer & flush method is only used by insecure context.
           transform (chunk, controller) {
             if (!(chunk instanceof Uint8Array)) {
@@ -207,7 +241,7 @@
               location.href = downloadUrl
             }
           }
-        }
+        })
         ts = new streamSaver.TransformStream(
           transformer,
           opts.writableStrategy,
@@ -221,10 +255,13 @@
       channel.port1.onmessage = evt => {
         // Service worker sent us a link that we should open.
         if (evt.data.download) {
-          const download = new URL(evt.data.download, location.href)
-          if (download.origin !== location.origin || !/^https?:$/.test(download.protocol)) {
-            channel.port1.postMessage('abort')
-            channel.port1.close()
+          try {
+            const download = new URL(evt.data.download, location.href)
+            if (download.origin !== location.origin || !/^https?:$/.test(download.protocol)) {
+              throw new Error('Invalid download URL.')
+            }
+          } catch (error) {
+            failOutput(new Error('Invalid download URL.'))
             return
           }
           // Special treatment for popup...
@@ -249,13 +286,9 @@
             // We never remove this iframes b/c it can interrupt saving
             makeIframe(evt.data.download)
           }
+          resolveDownload()
         } else if (evt.data.abort) {
-          chunks = []
-          channel.port1.postMessage('abort') //send back so controller is aborted
-          channel.port1.onmessage = null
-          channel.port1.close()
-          channel.port2.close()
-          channel = null
+          failOutput(new Error('Download aborted by helper.'))
         }
       }
 
@@ -263,18 +296,23 @@
         mitmTransporter.postMessage(...args)
       } else {
         mitmTransporter.addEventListener('load', () => {
-          mitmTransporter.postMessage(...args)
+          if (channel) mitmTransporter.postMessage(...args)
         }, { once: true })
       }
     }
 
-    let chunks = []
-
-    return (!useBlobFallback && ts && ts.writable) || new streamSaver.WritableStream({
+    const transferWriter = ts ? ts.writable.getWriter() : null
+    if (transferWriter) transferWriter.closed.catch(error => failOutput(error || new Error('Download aborted.')))
+    return new streamSaver.WritableStream({
+      start (controller) {
+        outputController = controller
+        if (outputError) controller.error(outputError)
+      },
       write (chunk) {
         if (!(chunk instanceof Uint8Array)) {
           throw new TypeError('Can only write Uint8Arrays')
         }
+        if (transferWriter) return transferWriter.write(chunk)
         if (useBlobFallback) {
           // Safari... The new IE6
           // https://github.com/jimmywarting/StreamSaver.js/issues/69
@@ -310,30 +348,30 @@
         }
       },
       close () {
+        if (transferWriter) return Promise.all([transferWriter.close(), downloadReady]).then(() => closeChannel())
         if (useBlobFallback) {
-          const blob = new Blob(chunks, { type: 'application/octet-stream; charset=utf-8' })
-          const link = document.createElement('a')
-          const objectURL = URL.createObjectURL(blob)
-          link.href = objectURL
-          link.download = filename
+          let objectURL
           try {
+            const blob = new Blob(chunks, { type: 'application/octet-stream; charset=utf-8' })
+            const link = document.createElement('a')
+            objectURL = URL.createObjectURL(blob)
+            link.href = objectURL
+            link.download = filename
             link.click()
           } finally {
             chunks = []
-            setTimeout(() => URL.revokeObjectURL(objectURL), 60000)
+            if (objectURL) setTimeout(() => URL.revokeObjectURL(objectURL), 60000)
           }
         } else {
           channel.port1.postMessage('end')
+          return downloadReady.then(() => closeChannel())
         }
       },
-      abort () {
+      abort (reason) {
         chunks = []
-        if (!channel) return // Blob fallback has no message channel.
-        channel.port1.postMessage('abort')
-        channel.port1.onmessage = null
-        channel.port1.close()
-        channel.port2.close()
-        channel = null
+        if (rejectDownload) rejectDownload(reason || new Error('Download aborted.'))
+        closeChannel('abort')
+        if (transferWriter) return transferWriter.abort(reason)
       }
     }, opts.writableStrategy)
   }

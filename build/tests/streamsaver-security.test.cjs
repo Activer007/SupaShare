@@ -4,24 +4,84 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.join(__dirname, '../../internal/webserver/web');
-function load(file, secure, origin='https://share.test') {
-  const frames=[], messages=[], downloads=[], channels=[];
+function load(file, secure, origin='https://share.test', transferable=false) {
+  const frames=[], messages=[], downloads=[], channels=[], blobs=[];
   const document={documentElement:{style:{}}, body:{appendChild(e){frames.push(e)}},
     createElement(){return {click(){downloads.push(this.href)},addEventListener(name,fn){fn()},contentWindow:{postMessage(...args){messages.push(args)}}}}};
-  const context={module:{exports:{}}, console, URL, Uint8Array, Blob, Response, ReadableStream, WritableStream,
+  const LocalURL = class extends URL {
+    static createObjectURL(blob) { blobs.push(blob); return 'blob:synthetic'; }
+    static revokeObjectURL() {}
+  };
+  const context={module:{exports:{}}, console, URL:LocalURL, Uint8Array, Blob, Response, ReadableStream, WritableStream,
     location:{origin,href:origin+'/share/download'}, document, navigator:{serviceWorker:{}},
-    MessageChannel:class{constructor(){channels.push(this);this.port1={postMessage(){},close(){}};this.port2={close(){}}}},
+    MessageChannel:class{constructor(){channels.push(this);this.port1={sent:[],postMessage(value){this.sent.push(value)},close(){this.closed=true}};this.port2={close(){this.closed=true}}}},
     setTimeout(){},window:{HTMLElement:function HTMLElement(){},isSecureContext:secure,WritableStream}};
+  if (transferable) context.TransformStream = TransformStream;
   vm.runInNewContext(fs.readFileSync(path.join(root,file),'utf8'),context);
-  return {saver:context.module.exports,frames,messages,downloads,channels};
+  return {saver:context.module.exports,frames,messages,downloads,channels,blobs};
 }
 for(const file of ['static/js/streamsaver.js','static/js/min/streamsaver.min.js']) {
+  for (const transferable of [false, true]) {
+    test(file + ' invalid helper reply errors the writer, transferable=' + transferable, async () => {
+      for (const download of ['https://outside.test/steal', 'http://[']) {
+        const {saver, frames, channels} = load(file, true, 'https://share.test', transferable);
+        const writer = saver.createWriteStream('synthetic.txt').getWriter();
+        const outcome = writer.closed.then(() => 'closed', error => error.message);
+        writer.close().catch(() => {});
+        channels.at(-1).port1.onmessage({data: {download}});
+        const result = await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve('pending'), 50))]);
+        assert.match(result, /Invalid download URL/);
+        await assert.rejects(writer.write(new Uint8Array([1])), /Invalid download URL/);
+        assert.equal(channels.at(-1).port1.closed, true);
+        assert.equal(channels.at(-1).port2.closed, true);
+        assert.equal(frames.length, 1);
+      }
+    });
+    test(file + ' abort clears channels and a later stream succeeds, transferable=' + transferable, async () => {
+      const {saver, channels} = load(file, true, 'https://share.test', transferable);
+      const writer = saver.createWriteStream('cancel.txt').getWriter();
+      writer.closed.catch(() => {});
+      await writer.abort(new Error('synthetic cancellation'));
+      assert.equal(channels.at(-1).port1.closed, true);
+      assert.equal(channels.at(-1).port2.closed, true);
+      const rejected = saver.createWriteStream('helper-abort.txt').getWriter();
+      const helperAborted = assert.rejects(rejected.closed, /Download aborted by helper/);
+      channels.at(-1).port1.onmessage({data: {abort: true}});
+      await helperAborted;
+      assert.equal(channels.at(-1).port1.closed, true);
+      assert.equal(channels.at(-1).port2.closed, true);
+      const retry = saver.createWriteStream('retry.txt').getWriter();
+      const received = [];
+      const drain = transferable ? channels.at(-1).port1.sent[0].readableStream.pipeTo(new WritableStream({
+        write(chunk) { received.push(...chunk); }
+      })) : Promise.resolve();
+      await retry.write(new Uint8Array([1, 2, 3]));
+      let complete = false;
+      const closing = retry.close().then(() => { complete = true; });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(complete, false);
+      channels.at(-1).port1.onmessage({data: {download: 'https://share.test/serviceworker/retry'}});
+      await closing;
+      await drain;
+      if (transferable) assert.deepEqual(received, [1, 2, 3]);
+      assert.equal(channels.at(-1).port1.closed, true);
+      assert.equal(channels.at(-1).port2.closed, true);
+    });
+  }
   test(file+' remote HTTP saves locally without helper',async()=>{
     const {saver,frames,messages,downloads}=load(file,false,'http://remote.test');
     const writer=saver.createWriteStream('test').getWriter();
     await writer.write(new Uint8Array([1,2,3]));await writer.close();
     assert.equal(frames.length,0);assert.equal(messages.length,0);
     assert.match(downloads[0],/^blob:/);
+  });
+  test(file + ' remote HTTP saves exactly 64 MiB locally', async () => {
+    const {saver, blobs, frames} = load(file, false, 'http://remote.test');
+    const writer = saver.createWriteStream('boundary.bin').getWriter();
+    await writer.write(new Uint8Array(64 * 1024 * 1024));
+    await writer.close();
+    assert.equal(blobs[0].size, 64 * 1024 * 1024);
+    assert.equal(frames.length, 0);
   });
   test(file+' remote HTTP rejects byte 64MiB+1 and does not save partial data',async()=>{
     const {saver,frames,downloads}=load(file,false,'http://remote.test');
