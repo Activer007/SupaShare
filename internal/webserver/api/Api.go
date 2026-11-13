@@ -136,27 +136,6 @@ func apiEditFile(w http.ResponseWriter, r requestParser, user models.User, _ mod
 	outputFileApiInfo(w, file)
 }
 
-// generateNewKey generates and saves a new API key
-func generateNewKey(defaultPermissions bool, userId int, friendlyName, filerequstId string) models.ApiKey {
-	if friendlyName == "" {
-		friendlyName = "Unnamed key"
-	}
-	newKey := models.ApiKey{
-		Id:              helper.GenerateRandomString(LengthApiKey),
-		PublicId:        helper.GenerateRandomString(LengthPublicId),
-		FriendlyName:    friendlyName,
-		Permissions:     models.ApiPermDefault,
-		IsSystemKey:     false,
-		UserId:          userId,
-		UploadRequestId: filerequstId,
-	}
-	if !defaultPermissions {
-		newKey.Permissions = models.ApiPermNone
-	}
-	database.SaveApiKey(newKey)
-	return newKey
-}
-
 func apiDeleteKey(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
 	request, ok := r.(*paramAuthDelete)
 	if !ok {
@@ -198,12 +177,12 @@ func apiModifyApiKey(w http.ResponseWriter, r requestParser, user models.User, _
 	}
 	if request.GrantPermission && !apiKey.HasPermission(request.Permission) {
 		apiKey.GrantPermission(request.Permission)
-		database.SaveApiKey(apiKey)
+		updateApiKeyProperties(w, apiKey)
 		return
 	}
 	if !request.GrantPermission && apiKey.HasPermission(request.Permission) {
 		apiKey.RemovePermission(request.Permission)
-		database.SaveApiKey(apiKey)
+		updateApiKeyProperties(w, apiKey)
 	}
 }
 
@@ -238,7 +217,18 @@ func apiCreateApiKey(w http.ResponseWriter, r requestParser, user models.User, _
 		return
 	}
 
-	key := generateNewKey(request.BasicPermissions, user.Id, request.FriendlyName, "")
+	key, err := createUserApiKey(request.BasicPermissions, user.Id, request.FriendlyName, database.CreateUserApiKey)
+	if err != nil {
+		switch {
+		case errors.Is(err, models.ErrApiKeyAdmissionBusy):
+			sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "API key admission is busy; contact your administrator if this persists")
+		case errors.Is(err, models.ErrApiKeyQuotaExceeded):
+			sendError(w, http.StatusConflict, errorcodes.InvalidUserInput, "API key capacity reached; delete unused keys or contact your administrator")
+		default:
+			sendError(w, http.StatusInternalServerError, errorcodes.InternalServer, "Could not create API key")
+		}
+		return
+	}
 	output := models.ApiKeyOutput{
 		Result:   "OK",
 		Id:       key.Id,
@@ -324,6 +314,9 @@ func apiChangeFriendlyName(w http.ResponseWriter, r requestParser, user models.U
 }
 
 func renameApiKeyFriendlyName(id string, newName string) error {
+	if err := validateApiKeyName(newName); err != nil {
+		return err
+	}
 	if newName == "" {
 		newName = "Unnamed key"
 	}
@@ -337,7 +330,13 @@ func renameApiKeyFriendlyName(id string, newName string) error {
 	}
 	if key.FriendlyName != newName {
 		key.FriendlyName = newName
-		database.SaveApiKey(key)
+		updated, err := database.UpdateApiKeyProperties(key)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return errors.New("API key was deleted")
+		}
 	}
 	return nil
 }
@@ -1141,7 +1140,8 @@ func updateApiKeyPermsOnUserPermChange(userId int, userPerm models.UserPermissio
 		}
 		if apiKey.HasPermission(affectedPermission) {
 			apiKey.RemovePermission(affectedPermission)
-			database.SaveApiKey(apiKey)
+			_, err := database.UpdateApiKeyProperties(apiKey)
+			helper.Check(err)
 		}
 	}
 }

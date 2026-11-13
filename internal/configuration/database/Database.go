@@ -678,3 +678,11 @@ func SaveTrafficSince(since int64) {
 func GetTrafficSince() (int64, bool) {
 	return db.GetTrafficSince()
 }
+
+// CreateUserApiKey creates a bounded ordinary key without replacing credentials.
+func CreateUserApiKey(key models.ApiKey) (bool, error) {
+	return db.CreateUserApiKey(key)
+}
+
+// UpdateApiKeyProperties updates mutable properties only if the credential still exists.
+func UpdateApiKeyProperties(key models.ApiKey) (bool, error) { return db.UpdateApiKeyProperties(key) }

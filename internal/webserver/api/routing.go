@@ -535,7 +535,7 @@ type paramAuthCreate struct {
 }
 
 func (p *paramAuthCreate) ProcessParameter(_ *http.Request) error {
-	return validateDisplayName(p.FriendlyName)
+	return validateApiKeyName(p.FriendlyName)
 }
 
 type paramAuthFriendlyName struct {
@@ -545,7 +545,7 @@ type paramAuthFriendlyName struct {
 }
 
 func (p *paramAuthFriendlyName) ProcessParameter(_ *http.Request) error {
-	return validateDisplayName(p.FriendlyName)
+	return validateApiKeyName(p.FriendlyName)
 }
 
 type paramAuthModify struct {
@@ -928,6 +928,17 @@ func (p *paramURequestListSingle) ProcessParameter(r *http.Request) error {
 }
 
 func checkHeaderExists(r *http.Request, key string, isRequired, isString bool) (bool, error) {
+	// Both generated API-key name parsers call this before base64 decoding.
+	if key == "friendlyName" {
+		name := r.Header.Get(key)
+		limit := models.MaxApiKeyNameBytes
+		if strings.HasPrefix(name, "base64:") {
+			limit = len("base64:") + base64.StdEncoding.EncodedLen(limit)
+		}
+		if len(name) > limit {
+			return false, errors.New("API key name exceeds 256 UTF-8 bytes")
+		}
+	}
 	if r.Header.Get(key) != "" {
 		return true, nil
 	}
