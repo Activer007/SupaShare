@@ -139,3 +139,44 @@ func (p DatabaseProvider) cleanApiKeys() {
 	_, err := p.sqliteDb.Exec("DELETE FROM ApiKeys WHERE ApiKeys.Expiry > 0 AND ApiKeys.Expiry < ?", currentTime().Unix())
 	helper.Check(err)
 }
+
+// CreateUserApiKey uses one write statement as the cross-process quota gate.
+// Count stored legacy/expired records conservatively until normal cleanup removes them.
+func (p DatabaseProvider) CreateUserApiKey(key models.ApiKey) (bool, error) {
+	if err := models.ValidateNewUserApiKey(key); err != nil {
+		return false, err
+	}
+	result, err := p.sqliteDb.Exec(`INSERT INTO ApiKeys
+  (Id,FriendlyName,LastUsed,Permissions,Expiry,IsSystemKey,UserId,PublicId,UploadRequestId)
+ SELECT ?,?,?,?,0,0,?,?,'' WHERE
+  (SELECT COUNT(*) FROM ApiKeys WHERE COALESCE(IsSystemKey,0)=0 AND COALESCE(UploadRequestId,'')='' AND UserId=?) < ? AND
+  (SELECT COUNT(*) FROM ApiKeys WHERE COALESCE(IsSystemKey,0)=0 AND COALESCE(UploadRequestId,'')='') < ?
+ ON CONFLICT(Id) DO NOTHING`, key.Id, key.FriendlyName, key.LastUsed, key.Permissions, key.UserId, key.PublicId,
+		key.UserId, models.ApiKeyMaxPerUser, models.ApiKeyMaxGlobal)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil || n == 1 {
+		return n == 1, err
+	}
+	var exists int
+	err = p.sqliteDb.QueryRow("SELECT COUNT(*) FROM ApiKeys WHERE Id=?", key.Id).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	if exists != 0 {
+		return false, nil
+	}
+	return false, models.ErrApiKeyQuotaExceeded
+}
+
+// UpdateApiKeyProperties cannot resurrect a key deleted by a concurrent request.
+func (p DatabaseProvider) UpdateApiKeyProperties(key models.ApiKey) (bool, error) {
+	result, err := p.sqliteDb.Exec("UPDATE ApiKeys SET FriendlyName=?, Permissions=? WHERE Id=?", key.FriendlyName, key.Permissions, key.Id)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}

@@ -73,6 +73,10 @@ type Database interface {
 	SaveApiKey(apikey models.ApiKey)
 	// InsertApiKey atomically creates a key without replacing an existing credential.
 	InsertApiKey(apikey models.ApiKey) (bool, error)
+	// CreateUserApiKey atomically enforces ordinary-key quotas before insertion.
+	CreateUserApiKey(apikey models.ApiKey) (bool, error)
+	// UpdateApiKeyProperties never creates/revives a removed credential.
+	UpdateApiKeyProperties(apikey models.ApiKey) (bool, error)
 	// UpdateTimeApiKey writes the content of LastUsage to the database
 	UpdateTimeApiKey(apikey models.ApiKey)
 	// DeleteApiKey deletes an API key with the given ID
