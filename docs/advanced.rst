@@ -327,6 +327,16 @@ To begin, authenticate your session using the following command:
 
 You will be prompted to provide your server URL, an API key with upload permissions, and your end-to-end encryption key (if applicable).
 
+The two key prompts hide input; neither characters nor masking stars are printed.
+Wait for each prompt before typing or pasting its key. Login requires an interactive
+terminal (Docker: ``-it``); redirected/piped input and terminal setup failures abort
+without saving credentials. There is no fallback to visible input. Press Ctrl-C to
+cancel. Existing private configuration files and explicit ``-c`` selection remain
+supported for unattended upload/download commands; do not place secrets in command
+arguments or shell history to work around the interactive login requirement.
+Hidden input does not protect against a compromised terminal, input-recording tools,
+clipboard capture, or another process with access to your account.
+
 * **Storage:** Credentials remain plain text, protected by the operating system.
   Native installations now use ``os.UserConfigDir()/supashare/gokapi-cli.json``:
 
