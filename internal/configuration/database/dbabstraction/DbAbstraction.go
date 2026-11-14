@@ -77,8 +77,9 @@ type Database interface {
 	CreateUserApiKey(apikey models.ApiKey) (bool, error)
 	// CreateTemporaryApiKey atomically bounds outstanding system credentials.
 	CreateTemporaryApiKey(apikey models.ApiKey) (bool, error)
-	// UpdateApiKeyProperties never creates/revives a removed credential.
-	UpdateApiKeyProperties(apikey models.ApiKey) (bool, error)
+	// Field updates are atomic and never create/revive a removed credential.
+	UpdateApiKeyName(id, name string) (bool, error)
+	UpdateApiKeyPermission(id string, permission models.ApiPermission, grant bool) (bool, error)
 	// UpdateTimeApiKey writes the content of LastUsage to the database
 	UpdateTimeApiKey(apikey models.ApiKey)
 	// DeleteApiKey deletes an API key with the given ID

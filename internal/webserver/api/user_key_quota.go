@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/errorHandling/errorcodes"
@@ -43,8 +42,7 @@ func createUserApiKey(defaultPermissions bool, userID int, name string, insert f
 
 // Never upsert an edited credential: concurrent deletion must not recreate it
 // outside the quota gate (or undo the user's revocation).
-func updateApiKeyProperties(w http.ResponseWriter, key models.ApiKey) {
-	updated, err := database.UpdateApiKeyProperties(key)
+func reportApiKeyUpdate(w http.ResponseWriter, updated bool, err error) {
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, errorcodes.InternalServer, "Could not update API key")
 		return

@@ -145,16 +145,49 @@ func (p DatabaseProvider) CreateUserApiKey(key models.ApiKey) (bool, error) {
 	return n == 1, nil
 }
 
-var updateApiKeyProperties = redigo.NewScript(1, `
+var updateApiKeyName = redigo.NewScript(1, `
 if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
-redis.call('HSET', KEYS[1], 'FriendlyName', ARGV[1], 'Permissions', ARGV[2])
+redis.call('HSET', KEYS[1], 'FriendlyName', ARGV[1])
 return 1
 `)
 
-// UpdateApiKeyProperties preserves owner, classification and TTL, and never upserts.
-func (p DatabaseProvider) UpdateApiKeyProperties(key models.ApiKey) (bool, error) {
+// UpdateApiKeyName preserves all credential fields and TTL, and never upserts.
+func (p DatabaseProvider) UpdateApiKeyName(id, name string) (bool, error) {
 	conn := p.pool.Get()
 	defer conn.Close()
-	n, err := redigo.Int(updateApiKeyProperties.Do(conn, p.dbPrefix+prefixApiKeys+key.Id, key.FriendlyName, key.Permissions))
+	n, err := redigo.Int(updateApiKeyName.Do(conn, p.dbPrefix+prefixApiKeys+id, name))
+	return n == 1, err
+}
+
+var updateApiKeyPermission = redigo.NewScript(1, `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+local current = tonumber(redis.call('HGET', KEYS[1], 'Permissions') or '0')
+local mask = tonumber(ARGV[1])
+-- ApiPermission is uint16. Explicit arithmetic also works in Redis-compatible
+-- Lua implementations without LuaJIT's optional bit module.
+local updated = current
+local place = 1
+for i = 1, 16 do
+  local selected = math.floor(mask / place) % 2 == 1
+  local present = math.floor(current / place) % 2 == 1
+  if selected then
+    if ARGV[2] == '1' and not present then updated = updated + place end
+    if ARGV[2] ~= '1' and present then updated = updated - place end
+  end
+  place = place * 2
+end
+redis.call('HSET', KEYS[1], 'Permissions', updated)
+return 1
+`)
+
+// UpdateApiKeyPermission modifies only selected bits atomically across clients.
+func (p DatabaseProvider) UpdateApiKeyPermission(id string, permission models.ApiPermission, grant bool) (bool, error) {
+	conn := p.pool.Get()
+	defer conn.Close()
+	flag := 0
+	if grant {
+		flag = 1
+	}
+	n, err := redigo.Int(updateApiKeyPermission.Do(conn, p.dbPrefix+prefixApiKeys+id, permission, flag))
 	return n == 1, err
 }

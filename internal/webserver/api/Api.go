@@ -137,54 +137,65 @@ func apiEditFile(w http.ResponseWriter, r requestParser, user models.User, _ mod
 	outputFileApiInfo(w, file)
 }
 
-func apiDeleteKey(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+// lockEditingApiKey resolves aliases before locking. User locks precede key locks,
+// matching user-profile edits; LockMany deduplicates aliases and stripe collisions.
+// The provider field update remains the cross-instance lost-update protection.
+func lockEditingApiKey(w http.ResponseWriter, targetID string, actor models.User, credential models.ApiKey) (models.User, models.ApiKey, func(), bool) {
+	owner, target, ok := isValidKeyForEditing(targetID)
+	if !ok {
+		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Invalid key ID provided.")
+		return models.User{}, models.ApiKey{}, func() {}, false
+	}
+	unlockUsers := apimutex.LockMany(apimutex.TypeUser, strconv.Itoa(actor.Id), strconv.Itoa(owner.Id))
+	unlockKeys := apimutex.LockMany(apimutex.TypeApiKey, credential.Id, target.Id)
+	unlock := func() { unlockKeys(); unlockUsers() }
+	currentActor, currentCredential, valid := isValidApiKey(credential.Id, false, models.ApiPermApiMod)
+	owner, currentTarget, found := isValidKeyForEditing(target.Id)
+	if !valid || currentCredential.IsUploadRequestKey() || currentActor.Id != actor.Id ||
+		!found || currentTarget.UserId != target.UserId {
+		unlock()
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "API key management permission is no longer valid")
+		return models.User{}, models.ApiKey{}, func() {}, false
+	}
+	if !authorization.Authorize(currentActor, authorization.ManageAPIKeys, owner.Id) {
+		unlock()
+		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to edit this API key")
+		return models.User{}, models.ApiKey{}, func() {}, false
+	}
+	return owner, currentTarget, unlock, true
+}
+
+func apiDeleteKey(w http.ResponseWriter, r requestParser, user models.User, credential models.ApiKey) {
 	request, ok := r.(*paramAuthDelete)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	apiKeyOwner, apiKey, ok := isValidKeyForEditing(request.KeyId)
+	_, target, unlock, ok := lockEditingApiKey(w, request.KeyId, user, credential)
 	if !ok {
-		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Invalid key ID provided.")
 		return
 	}
-	if !authorization.Authorize(user, authorization.ManageAPIKeys, apiKeyOwner.Id) {
-		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to delete this API key")
-		return
-	}
-	database.DeleteApiKey(apiKey.Id)
+	defer unlock()
+	database.DeleteApiKey(target.Id)
 }
 
-func apiModifyApiKey(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiModifyApiKey(w http.ResponseWriter, r requestParser, user models.User, credential models.ApiKey) {
 	request, ok := r.(*paramAuthModify)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	apimutex.Lock(apimutex.TypeApiKey, request.KeyId)
-	defer apimutex.Unlock(apimutex.TypeApiKey, request.KeyId)
-
-	apiKeyOwner, apiKey, ok := isValidKeyForEditing(request.KeyId)
+	owner, target, unlock, ok := lockEditingApiKey(w, request.KeyId, user, credential)
 	if !ok {
-		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Invalid key ID provided.")
 		return
 	}
-	if !authorization.Authorize(user, authorization.ManageAPIKeys, apiKeyOwner.Id) {
-		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to delete this API key")
-		return
-	}
-
-	if !authorization.CanGrantAPI(apiKeyOwner, request.Permission) {
+	defer unlock()
+	// Revocation is always allowed; only granting requires the owner's capability.
+	if request.GrantPermission && !authorization.CanGrantAPI(owner, request.Permission) {
 		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "Insufficient user permission for owner to set this API permission")
 		return
 	}
-	if request.GrantPermission && !apiKey.HasPermission(request.Permission) {
-		apiKey.GrantPermission(request.Permission)
-		updateApiKeyProperties(w, apiKey)
-		return
-	}
-	if !request.GrantPermission && apiKey.HasPermission(request.Permission) {
-		apiKey.RemovePermission(request.Permission)
-		updateApiKeyProperties(w, apiKey)
-	}
+	// Do not skip an operation based on a stale permission snapshot.
+	updated, err := database.UpdateApiKeyPermission(target.Id, request.Permission, request.GrantPermission)
+	reportApiKeyUpdate(w, updated, err)
 }
 
 // isValidKeyForEditing checks if the provided API key is either a public or private ID and returns the user and API
@@ -298,54 +309,26 @@ func setCredentialResponseHeaders(w http.ResponseWriter) {
 	w.Header().Set("Expires", "0")
 }
 
-func apiChangeFriendlyName(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiChangeFriendlyName(w http.ResponseWriter, r requestParser, user models.User, credential models.ApiKey) {
 	request, ok := r.(*paramAuthFriendlyName)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-
-	ownerApiKey, apiKey, ok := isValidKeyForEditing(request.KeyId)
+	if err := validateApiKeyName(request.FriendlyName); err != nil {
+		sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, err.Error())
+		return
+	}
+	_, target, unlock, ok := lockEditingApiKey(w, request.KeyId, user, credential)
 	if !ok {
-		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Invalid key ID provided.")
 		return
 	}
-	if !authorization.Authorize(user, authorization.ManageAPIKeys, ownerApiKey.Id) {
-		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to edit this API key")
-		return
+	defer unlock()
+	name := request.FriendlyName
+	if name == "" {
+		name = "Unnamed key"
 	}
-	err := renameApiKeyFriendlyName(apiKey.Id, request.FriendlyName)
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, errorcodes.InternalServer, err.Error())
-		return
-	}
-}
-
-func renameApiKeyFriendlyName(id string, newName string) error {
-	if err := validateApiKeyName(newName); err != nil {
-		return err
-	}
-	if newName == "" {
-		newName = "Unnamed key"
-	}
-
-	apimutex.Lock(apimutex.TypeApiKey, id)
-	defer apimutex.Unlock(apimutex.TypeApiKey, id)
-
-	key, ok := database.GetApiKey(id)
-	if !ok {
-		return errors.New("could not modify API key")
-	}
-	if key.FriendlyName != newName {
-		key.FriendlyName = newName
-		updated, err := database.UpdateApiKeyProperties(key)
-		if err != nil {
-			return err
-		}
-		if !updated {
-			return errors.New("API key was deleted")
-		}
-	}
-	return nil
+	updated, err := database.UpdateApiKeyName(target.Id, name)
+	reportApiKeyUpdate(w, updated, err)
 }
 
 const deletionStatusHeader = "X-SupaShare-Deletion-Status"
@@ -1178,11 +1161,8 @@ func updateApiKeyPermsOnUserPermChange(userId int, userPerm models.UserPermissio
 		if apiKey.UserId != userId {
 			continue
 		}
-		if apiKey.HasPermission(affectedPermission) {
-			apiKey.RemovePermission(affectedPermission)
-			_, err := database.UpdateApiKeyProperties(apiKey)
-			helper.Check(err)
-		}
+		_, err := database.UpdateApiKeyPermission(apiKey.Id, affectedPermission, false)
+		helper.Check(err)
 	}
 }
 

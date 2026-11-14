@@ -171,9 +171,24 @@ func (p DatabaseProvider) CreateUserApiKey(key models.ApiKey) (bool, error) {
 	return false, models.ErrApiKeyQuotaExceeded
 }
 
-// UpdateApiKeyProperties cannot resurrect a key deleted by a concurrent request.
-func (p DatabaseProvider) UpdateApiKeyProperties(key models.ApiKey) (bool, error) {
-	result, err := p.sqliteDb.Exec("UPDATE ApiKeys SET FriendlyName=?, Permissions=? WHERE Id=?", key.FriendlyName, key.Permissions, key.Id)
+// UpdateApiKeyName updates only the label and never recreates a deleted key.
+func (p DatabaseProvider) UpdateApiKeyName(id, name string) (bool, error) {
+	result, err := p.sqliteDb.Exec("UPDATE ApiKeys SET FriendlyName=? WHERE Id=?", name, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+// UpdateApiKeyPermission changes only the selected bits in one database write.
+// This remains atomic across independent provider instances/processes.
+func (p DatabaseProvider) UpdateApiKeyPermission(id string, permission models.ApiPermission, grant bool) (bool, error) {
+	query := "UPDATE ApiKeys SET Permissions=COALESCE(Permissions,0) & ~? WHERE Id=?"
+	if grant {
+		query = "UPDATE ApiKeys SET Permissions=COALESCE(Permissions,0) | ? WHERE Id=?"
+	}
+	result, err := p.sqliteDb.Exec(query, permission, id)
 	if err != nil {
 		return false, err
 	}
