@@ -61,3 +61,23 @@ PTY/redirected-input scenarios above, including partial API/E2E input followed b
 Ctrl-C and SIGTERM at both prompts. Windows amd64 and Darwin arm64 CLI binaries
 cross-built successfully; that is compile evidence only, not native execution.
 No server tests or full repository suite were run for this CLI-only patch.
+
+## Local macOS integration
+
+The supplied patch's size, SHA256 and master baseline were verified locally.
+The native Darwin amd64 CLI build and all 15 PTY/redirected-input scenarios
+passed on macOS 15.7 with Python 3.13.7. Cloud Go tests, race and vet results were
+reused. The production secret reader required no additional local change.
+
+The POSIX fixture resolves its temporary credential path before use because
+macOS exposes `/var` through a symlink rejected by the existing credential-store
+policy. It keeps the PTY open independently of the child's controlling-terminal
+lifetime, drains output while waiting, and bounds cleanup waits. Terminal-state
+comparison excludes the kernel's transient PENDIN flag while checking the other
+attributes, including ECHO and ISIG. Initial fixture failures and a stalled
+cleanup were corrected before the successful native run.
+
+The PTY checks send Ctrl-C as raw terminal input and deliver SIGTERM separately.
+Manual Terminal.app interaction, native Windows console execution, Docker `-it`
+and a real remote server remain unverified. All test keys and API responses were
+synthetic and limited to loopback.

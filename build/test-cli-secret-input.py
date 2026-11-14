@@ -5,7 +5,6 @@ No production config, services or credentials are read.
 """
 import base64
 import errno
-import fcntl
 import http.server
 import json
 import os
@@ -59,12 +58,11 @@ class Session:
         self.master, self.slave = pty.openpty()
         self.original = termios.tcgetattr(self.slave)
         self.output = b""
-        def terminal_session():
-            os.setsid()
-            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        # Keep the PTY usable for state checks after the child exits. Acquiring
+        # it as the child's controlling terminal hangs it up on macOS at exit.
         self.process = subprocess.Popen([binary, "login", "-c", str(config)],
             stdin=self.slave, stdout=self.slave, stderr=self.slave,
-            preexec_fn=terminal_session)
+            start_new_session=True)
 
     def pump(self, timeout=0.05):
         if select.select([self.master], [], [], timeout)[0]:
@@ -92,19 +90,28 @@ class Session:
         os.write(self.master, value)
 
     def finish(self, success):
-        self.process.wait(timeout=10)
+        deadline = time.monotonic() + 10
+        while self.process.poll() is None:
+            self.pump()
+            if time.monotonic() > deadline:
+                raise AssertionError("CLI did not exit before the deadline")
         self.pump()
         assert (self.process.returncode == 0) == success, "unexpected login result"
-        assert termios.tcgetattr(self.slave) == self.original, "terminal state not restored"
+        restored = termios.tcgetattr(self.slave)
+        expected = list(self.original)
+        # The kernel may set PENDIN when canonical input is restored.
+        for state in (restored, expected):
+            state[3] &= ~getattr(termios, "PENDIN", 0)
+        assert restored == expected, "terminal state not restored"
         for marker in (API_KEY, E2E_KEY, b"invalid-e2e-marker"):
             assert marker not in self.output, "secret appeared in terminal output"
 
     def close(self):
-        if self.process.poll() is None:
-            self.process.kill()
-            self.process.wait()
         os.close(self.master)
         os.close(self.slave)
+        if self.process.poll() is None:
+            self.process.kill()
+        self.process.wait(timeout=5)
 
 
 def main():
@@ -114,7 +121,7 @@ def main():
     origin = f"http://127.0.0.1:{server.server_port}"
     try:
         with tempfile.TemporaryDirectory(prefix="supashare-cli-secret-") as tmp:
-            config = pathlib.Path(tmp) / "credentials.json"
+            config = pathlib.Path(tmp).resolve() / "credentials.json"
             cases = ("api", "repeat", "e2e", "empty-api", "eof-api", "interrupt-api",
                      "terminate-api", "partial-interrupt-api", "empty-e2e", "invalid-e2e", "eof-e2e", "interrupt-e2e", "partial-interrupt-e2e", "terminate-e2e")
             for case in cases:
