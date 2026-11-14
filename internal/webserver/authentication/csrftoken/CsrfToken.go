@@ -13,6 +13,9 @@ var mutex sync.Mutex
 var cleanupOnce sync.Once
 
 const ttl = 5 * time.Minute
+const maxPerPurpose = 4096
+const maxPerBinding = 16
+const maxPerClient = 64
 
 const (
 	TypeLogin    = iota
@@ -25,10 +28,11 @@ type csrfToken struct {
 	Type    int
 	Expiry  int64
 	Binding string
+	Client  string
 }
 
 func Generate(tokenType int) string {
-	return generate(tokenType, "")
+	return generate(tokenType, "", "")
 }
 
 // GenerateBound issues a token for one browser context. Empty bindings fail closed.
@@ -36,16 +40,50 @@ func GenerateBound(tokenType int, binding string) string {
 	if binding == "" {
 		return ""
 	}
-	return generate(tokenType, binding)
+	return generate(tokenType, binding, "")
 }
 
-func generate(tokenType int, binding string) string {
+// GenerateBoundForClient additionally partitions anonymous capacity by trusted client IP.
+func GenerateBoundForClient(tokenType int, binding, client string) string {
+	if binding == "" || client == "" {
+		return ""
+	}
+	return generate(tokenType, binding, client)
+}
+
+func generate(tokenType int, binding, client string) string {
+	if tokenType < TypeLogin || tokenType > TypeLogout {
+		return ""
+	}
 	token := helper.GenerateRandomString(20)
 	mutex.Lock()
+	now := time.Now().Unix()
+	purposeCount, bindingCount, clientCount := 0, 0, 0
+	for id, existing := range tokens {
+		if existing.Expiry <= now {
+			delete(tokens, id)
+			continue
+		}
+		if existing.Type != tokenType {
+			continue
+		}
+		purposeCount++
+		if binding != "" && existing.Binding == binding {
+			bindingCount++
+		}
+		if client != "" && existing.Client == client {
+			clientCount++
+		}
+	}
+	if purposeCount >= maxPerPurpose || bindingCount >= maxPerBinding || clientCount >= maxPerClient {
+		mutex.Unlock()
+		return ""
+	}
 	tokens[token] = csrfToken{
 		Type:    tokenType,
 		Expiry:  time.Now().Add(ttl).Unix(),
 		Binding: binding,
+		Client:  client,
 	}
 	mutex.Unlock()
 
@@ -86,13 +124,13 @@ func isValid(tokenType int, tokenId, binding string) bool {
 func cleanup(periodic bool) {
 	mutex.Lock()
 	for tokenId, token := range tokens {
-		if token.Expiry < time.Now().Unix() {
+		if token.Expiry <= time.Now().Unix() {
 			delete(tokens, tokenId)
 		}
 	}
 	mutex.Unlock()
 	if periodic {
-		time.Sleep(time.Hour)
+		time.Sleep(time.Minute)
 		go cleanup(true)
 	}
 

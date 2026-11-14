@@ -75,6 +75,8 @@ type Database interface {
 	InsertApiKey(apikey models.ApiKey) (bool, error)
 	// CreateUserApiKey atomically enforces ordinary-key quotas before insertion.
 	CreateUserApiKey(apikey models.ApiKey) (bool, error)
+	// CreateTemporaryApiKey atomically bounds outstanding system credentials.
+	CreateTemporaryApiKey(apikey models.ApiKey) (bool, error)
 	// UpdateApiKeyProperties never creates/revives a removed credential.
 	UpdateApiKeyProperties(apikey models.ApiKey) (bool, error)
 	// UpdateTimeApiKey writes the content of LastUsage to the database

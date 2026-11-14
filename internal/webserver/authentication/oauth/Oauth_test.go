@@ -226,7 +226,7 @@ func initWithMock(m *mockOIDCServer) {
 func newRequest(rawURL, stateValue string) *http.Request {
 	req := httptest.NewRequest("GET", rawURL, nil)
 	if stateValue != "" {
-		state, tx, ok := transactions.create()
+		state, tx, ok := transactions.create("fixture-client")
 		if !ok {
 			panic("fixture transaction capacity")
 		}

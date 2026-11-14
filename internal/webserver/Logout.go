@@ -23,8 +23,12 @@ func logoutToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Cross-origin token request rejected", http.StatusForbidden)
 		return
 	}
+	token := newBrowserCSRF(w, r, csrftoken.TypeLogout)
+	if token == "" {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"token": newBrowserCSRF(w, r, csrftoken.TypeLogout)})
+	_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
 // The configured public origin remains correct behind a reverse proxy. Missing

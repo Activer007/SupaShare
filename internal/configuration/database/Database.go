@@ -746,3 +746,7 @@ func RehashPassword(expected models.User, password string) (bool, error) {
 func UpdateUserProfile(expected models.User, updated models.User) (bool, error) {
 	return db.UpdateUserProfile(expected, updated)
 }
+
+func CreateTemporaryApiKey(key models.ApiKey) (bool, error) {
+	return db.CreateTemporaryApiKey(key)
+}

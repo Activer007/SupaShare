@@ -44,8 +44,14 @@ func Generate(user models.User, permission models.ApiPermission) (string, int64,
 		Permissions:  permission,
 		IsSystemKey:  true,
 		UserId:       user.Id,
-		Expiry:       time.Now().Add(time.Minute * 5).Unix(),
+		Expiry:       time.Now().Add(models.TemporaryApiKeyTTL).Unix(),
 	}
-	database.SaveApiKey(key)
+	created, err := database.CreateTemporaryApiKey(key)
+	if err != nil {
+		return "", 0, err
+	}
+	if !created {
+		return "", 0, models.ErrApiKeyAdmissionBusy
+	}
 	return key.Id, key.Expiry, nil
 }
