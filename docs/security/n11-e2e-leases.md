@@ -36,3 +36,26 @@ git diff --check
 ```
 
 These are automated targeted/regression checks, not a real browser/WebAssembly end-to-end upload certification, full-repository regression, or multi-process/real-Redis deployment test.
+
+## Local integration verification (2026-11-15)
+
+The official patch was verified at 228,036 bytes with SHA256 `0e47737acd7faae9d3d561bc9b8a9a25a00e370da10f540e26557417f73b025b`. Integration reuses the existing N04 worktree on branch `codex/n11-e2e-leases`, based on master `e0cb893ec84999267d7bece5ff9ec7ea31e23107` after PR #106 merged. The cloud checks above were reused. Local execution added generation, server/CLI builds and the following missing browser checks.
+
+Environment was macOS, Chrome through Chrome DevTools, an isolated browser context, `http://127.0.0.1:53991/`, an 885 × 670 CSS-pixel viewport, and a temporary SQLite database containing synthetic data. The Browser plugin was unavailable. Chrome DevTools was available for the requested real browser/WASM validation. Its file-upload tool rejected local paths, so browser-created synthetic `File` objects were assigned to the normal multi-file input and its change event was dispatched. The bundled WASM, upload endpoints and metadata persistence ran normally.
+
+- Built the exact pre-N11 master server and used its normal login/E2E setup/upload flow to create a synthetic key and two encrypted files. Stopped it, backed up the isolated SQLite database, and started the N11 server against the same configuration and database. After refreshing assets, both filenames and download key fragments decrypted correctly. The local key's SHA256 matched before and after upgrade.
+- Uploaded a batch of three new files through one multiple-file input. The shipped E2E configuration uses `parallelUploads = 1`. Also scheduled one upload in each of three same-user tabs at a common timestamp to exercise concurrent real WASM clients. All six new files retained their metadata alongside the two old files. Expected 409 contention and admission retries occurred, with all uploads completing.
+- Restarted the N11 server and refreshed the admin page. All eight filenames and download fragments were recovered with the same synthetic master key. The final page had eight rows, meaningful content, no error overlay, and no warning/error console messages. A screenshot captured the recovered file list.
+- Used the public download page's real `GokapiDecrypt` WASM function and `downloadFile` responses to compare all eight plaintext contents against their synthetic sources. All eight matched exactly. Exercised the public Download button for one old file and observed the transfer-complete status. Browser download destination files were unavailable to the local shell, so OS-level saved-file verification remains open.
+- While holding a valid lease, tokenless get/unlock requests each returned 400, a competing acquisition returned 409, and the holder could still read the complete metadata. Cleanup released the holder's own token.
+
+Local commands completed successfully with normal VCS stamping:
+
+```sh
+go generate ./...
+go build -tags noaws -o /private/tmp/supashare-n11-qa/server-after ./cmd/supashare
+go build -tags noaws -o /private/tmp/supashare-n11-qa/cli-after ./cmd/cli-uploader
+git diff --check
+```
+
+The automated cloud test commands were not rerun locally. Remaining coverage includes full-repository regression, other browsers/viewports, real Redis and multi-process deployment, OS download-file persistence, and a live CLI upload against this temporary server. Repository Actions are disabled, so an empty check-run list supplies no CI pass evidence.
