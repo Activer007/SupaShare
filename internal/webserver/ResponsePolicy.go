@@ -12,6 +12,18 @@ func addPageResponsePolicy(w http.ResponseWriter, name string) {
 	case "login", "download", "error":
 		w.Header().Set("Content-Security-Policy", "base-uri 'self'; object-src 'none'")
 	}
+	// Public download/upload views and the StreamSaver iframe retain their
+	// existing embedding behavior; every other page is non-embeddable by default.
+	switch name {
+	case "download", "download_password", "redirect_filename", "publicUpload", "delivery":
+	default:
+		policy := w.Header().Get("Content-Security-Policy")
+		if policy != "" {
+			policy += "; "
+		}
+		w.Header().Set("Content-Security-Policy", policy+"frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
+	}
 }
 
 // withResponsePolicy passes the original writer through so streaming handlers

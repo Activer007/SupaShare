@@ -368,7 +368,7 @@ func TestHandlerCallback_Success(t *testing.T) {
 	}
 	found := false
 	for _, cookie := range rr.Result().Cookies() {
-		if cookie.Name == "session_token" {
+		if cookie.Name == "session_token" && cookie.Value != "" {
 			session, exists := database.GetSession(cookie.Value)
 			if !exists || session.UserId != user.Id {
 				t.Fatal("wrong user session")
@@ -437,7 +437,7 @@ func TestCallbackRejectsUntrustedIdentity(t *testing.T) {
 			rr := httptest.NewRecorder()
 			HandlerCallback(rr, newRequest("/oauth-callback?state=s&code=validcode", "s"))
 			for _, cookie := range rr.Result().Cookies() {
-				if cookie.Name == "session_token" {
+				if cookie.Name == "session_token" && cookie.Value != "" {
 					t.Fatal("invalid identity received session")
 				}
 			}
@@ -500,7 +500,7 @@ func TestCallbackRejectsInvalidIDTokenClaims(t *testing.T) {
 				t.Fatal("invalid ID token did not reject callback")
 			}
 			for _, cookie := range rr.Result().Cookies() {
-				if cookie.Name == "session_token" {
+				if cookie.Name == "session_token" && cookie.Value != "" {
 					t.Fatal("invalid ID token issued a session")
 				}
 			}

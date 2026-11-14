@@ -6,6 +6,8 @@ Manages the sessions for the admin user or to access password-protected files
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
@@ -22,8 +24,9 @@ const lengthSessionId = 60
 // If a valid session is found, useSession will be called
 // Returns true if authenticated, otherwise false
 func IsValidSession(w http.ResponseWriter, r *http.Request, isOauth bool, OAuthRecheckInterval int) (models.User, bool) {
-	cookie, err := r.Cookie("session_token")
-	if err == nil {
+	cookie, ok := canonicalSessionCookie(r)
+	clearLegacyRequestCookies(w, r)
+	if ok {
 		sessionString := cookie.Value
 		if sessionString != "" {
 			session, ok := database.GetSession(sessionString)
@@ -101,22 +104,79 @@ func buildSession(isOauth bool, OAuthRecheckInterval int, userId int) (string, m
 
 // LogoutSession logs out user and deletes session
 func LogoutSession(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session_token")
-	if err == nil {
+	cookie, ok := canonicalSessionCookie(r)
+	if ok {
 		database.DeleteSession(cookie.Value)
 	}
-	writeSessionCookie(w, "", time.Now())
+	writeSessionCookie(w, "", time.Unix(1, 0))
+	clearLegacyRequestCookies(w, r)
 }
 
 // Writes session cookie to browser
 func writeSessionCookie(w http.ResponseWriter, sessionString string, expiry time.Time) {
 	c := &http.Cookie{
-		Name:     "session_token",
+		Name:     sessionCookieName(),
+		Path:     "/",
 		Value:    sessionString,
 		Expires:  expiry,
 		HttpOnly: true,
 		Secure:   configuration.UsesHTTPS(),
 		SameSite: http.SameSiteLaxMode,
 	}
+	if sessionString == "" {
+		c.MaxAge = -1
+	}
 	http.SetCookie(w, c)
+	clearLegacyCookies(w)
+}
+
+// The external configured scheme, not untrusted forwarding headers, chooses
+// the canonical name. HTTPS deliberately never authenticates a legacy cookie.
+func sessionCookieName() string {
+	if configuration.UsesHTTPS() {
+		return "__Host-session_token"
+	}
+	return "session_token"
+}
+
+func canonicalSessionCookie(r *http.Request) (*http.Cookie, bool) {
+	cookies := r.CookiesNamed(sessionCookieName())
+	if len(cookies) != 1 || cookies[0].Value == "" {
+		return nil, false
+	}
+	return cookies[0], true
+}
+
+func clearLegacyCookie(w http.ResponseWriter, path string) {
+	http.SetCookie(w, &http.Cookie{Name: "session_token", Path: path,
+		Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true,
+		Secure: configuration.UsesHTTPS(), SameSite: http.SameSiteLaxMode})
+}
+
+func clearLegacyCookies(w http.ResponseWriter) {
+	clearLegacyCookie(w, "/auth")
+	if configuration.UsesHTTPS() {
+		clearLegacyCookie(w, "/")
+	}
+	external, err := url.Parse(configuration.Get().ServerUrl)
+	if err != nil {
+		return
+	}
+	// Pathless login and rotation cookies defaulted to the deployment directory
+	// and its /auth directory. An empty prefix must not delete HTTP's new root cookie.
+	deploymentPath := strings.TrimRight(external.EscapedPath(), "/")
+	if deploymentPath != "" {
+		clearLegacyCookie(w, deploymentPath)
+		clearLegacyCookie(w, deploymentPath+"/auth")
+	}
+}
+
+// Cookie headers do not carry Domain or Path. Clear the known historical
+// host-only paths without guessing parent domains. HTTPS ignores all remaining
+// legacy cookies. HTTP rejects ambiguous cookies until they are removed.
+func clearLegacyRequestCookies(w http.ResponseWriter, r *http.Request) {
+	if len(r.CookiesNamed("session_token")) == 0 || (!configuration.UsesHTTPS() && len(r.CookiesNamed("session_token")) == 1) {
+		return
+	}
+	clearLegacyCookies(w)
 }

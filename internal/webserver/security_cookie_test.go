@@ -84,7 +84,7 @@ func TestSEC012PasswordChangeRevokesSessions(t *testing.T) {
 		t.Error("password change revoked another owner's session")
 	}
 	cookies := w.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "session_token" || cookies[0].Value != "" {
+	if len(cookies) < 2 || cookies[0].Name != "session_token" || cookies[0].Value != "" || cookies[0].Path != "/" || cookies[0].MaxAge != -1 {
 		t.Error("current browser cookie was not cleared")
 	}
 }

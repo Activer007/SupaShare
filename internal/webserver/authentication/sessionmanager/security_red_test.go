@@ -17,7 +17,7 @@ func TestSEC012HTTPSCookieRequiresSecure(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeSessionCookie(w, "synthetic-session", time.Now().Add(time.Minute))
 	cookies := w.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].Secure {
+	if len(cookies) < 2 || !cookies[0].Secure {
 		t.Fatal("SEC-012: HTTPS session cookie lacks Secure")
 	}
 }
