@@ -1043,15 +1043,19 @@ func outputFileJson(w http.ResponseWriter, file models.File) {
 	_, _ = io.WriteString(w, file.ToJsonResult(config.ServerUrl, config.IncludeFilename))
 }
 
-func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
 	request, ok := r.(*paramUserModify)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	idStr := strconv.Itoa(request.Id)
-	apimutex.Lock(apimutex.TypeUser, idStr)
-	defer apimutex.Unlock(apimutex.TypeUser, idStr)
 
+	unlock := apimutex.LockMany(apimutex.TypeUser, strconv.Itoa(user.Id), strconv.Itoa(request.Id))
+	defer unlock()
+	user, key, ok = isValidApiKey(key.Id, false, models.ApiPermManageUsers)
+	if !ok || key.IsUploadRequestKey() {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "User management permission is no longer valid")
+		return
+	}
 	userEdit, ok := isValidUserForEditing(w, request.Id)
 	if !ok {
 		return
@@ -1062,6 +1066,10 @@ func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, _ m
 	}
 	if userEdit.IsSameUser(user.Id) {
 		sendError(w, http.StatusBadRequest, errorcodes.ResourceCanNotBeEdited, "Cannot modify yourself")
+		return
+	}
+	if !authorization.CanManageUserTarget(user, userEdit) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Cannot manage a user with greater authority")
 		return
 	}
 	if request.GrantPermission && !user.HasPermission(request.Permission) {
@@ -1083,15 +1091,19 @@ func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, _ m
 	}
 }
 
-func apiChangeUserRank(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiChangeUserRank(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
 	request, ok := r.(*paramUserChangeRank)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	idStr := strconv.Itoa(request.Id)
-	apimutex.Lock(apimutex.TypeUser, idStr)
-	defer apimutex.Unlock(apimutex.TypeUser, idStr)
 
+	unlock := apimutex.LockMany(apimutex.TypeUser, strconv.Itoa(user.Id), strconv.Itoa(request.Id))
+	defer unlock()
+	user, key, ok = isValidApiKey(key.Id, false, models.ApiPermManageUsers)
+	if !ok || key.IsUploadRequestKey() {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "User management permission is no longer valid")
+		return
+	}
 	userEdit, ok := isValidUserForEditing(w, request.Id)
 	if !ok {
 		return
@@ -1104,11 +1116,19 @@ func apiChangeUserRank(w http.ResponseWriter, r requestParser, user models.User,
 		sendError(w, http.StatusBadRequest, errorcodes.ResourceCanNotBeEdited, "Cannot modify super admin")
 		return
 	}
+	if !authorization.CanManageUserTarget(user, userEdit) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Cannot manage a user with greater authority")
+		return
+	}
 	if request.NewRank == models.UserLevelAdmin && !user.IsAdmin() {
 		sendError(w, http.StatusBadRequest, errorcodes.ResourceCanNotBeEdited, "Only admins can promote users to admin")
 		return
 	}
 
+	if request.NewRank == models.UserLevelAdmin && !user.HasPermission(models.UserPermissionAll) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Cannot grant administrator permissions the actor does not hold")
+		return
+	}
 	userEdit.UserLevel = request.NewRank
 	switch request.NewRank {
 	case models.UserLevelAdmin:
@@ -1153,10 +1173,17 @@ func updateApiKeyPermsOnUserPermChange(userId int, userPerm models.UserPermissio
 	}
 }
 
-func apiResetPassword(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiResetPassword(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
 	request, ok := r.(*paramUserResetPw)
 	if !ok {
 		panic("invalid parameter passed")
+	}
+	unlock := apimutex.LockMany(apimutex.TypeUser, strconv.Itoa(user.Id), strconv.Itoa(request.Id))
+	defer unlock()
+	user, key, ok = isValidApiKey(key.Id, false, models.ApiPermManageUsers)
+	if !ok || key.IsUploadRequestKey() {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "User management permission is no longer valid")
+		return
 	}
 	userToEdit, ok := isValidUserForEditing(w, request.Id)
 	if !ok {
@@ -1170,14 +1197,26 @@ func apiResetPassword(w http.ResponseWriter, r requestParser, user models.User, 
 		sendError(w, http.StatusBadRequest, errorcodes.ResourceCanNotBeEdited, "Cannot reset password of yourself")
 		return
 	}
-	userToEdit.ResetPassword = true
+	if !authorization.CanManageUserTarget(user, userToEdit) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Cannot manage a user with greater authority")
+		return
+	}
+	passwordHash := userToEdit.Password
 	password := ""
 	if request.NewPassword {
 		password = users.GenerateTemporaryPassword()
-		userToEdit.Password = configuration.HashPassword(password, false, "")
+		passwordHash = configuration.HashPassword(password, false, "")
+	}
+	updated, err := database.UpdateUserResetCredentials(userToEdit, passwordHash, true)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, errorcodes.InternalServer, "Unable to reset user credentials")
+		return
+	}
+	if !updated {
+		sendError(w, http.StatusConflict, errorcodes.ResourceCanNotBeEdited, "User changed; reload before resetting")
+		return
 	}
 	database.DeleteAllSessionsByUser(userToEdit.Id)
-	database.SaveUser(userToEdit, false)
 	resultStruct := struct {
 		Result      string `json:"Result"`
 		NewPassword string `json:"password"`
@@ -1193,10 +1232,17 @@ func apiResetPassword(w http.ResponseWriter, r requestParser, user models.User, 
 	_, _ = w.Write(result)
 }
 
-func apiDeleteUser(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+func apiDeleteUser(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
 	request, ok := r.(*paramUserDelete)
 	if !ok {
 		panic("invalid parameter passed")
+	}
+	unlock := apimutex.LockMany(apimutex.TypeUser, strconv.Itoa(user.Id), strconv.Itoa(request.Id))
+	defer unlock()
+	user, key, ok = isValidApiKey(key.Id, false, models.ApiPermManageUsers)
+	if !ok || key.IsUploadRequestKey() {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "User management permission is no longer valid")
+		return
 	}
 	userToDelete, ok := isValidUserForEditing(w, request.Id)
 	if !ok {
@@ -1208,6 +1254,33 @@ func apiDeleteUser(w http.ResponseWriter, r requestParser, user models.User, _ m
 	}
 	if userToDelete.IsSameUser(user.Id) {
 		sendError(w, http.StatusBadRequest, errorcodes.ResourceCanNotBeEdited, "Cannot delete yourself")
+		return
+	}
+	if !authorization.CanManageUserTarget(user, userToDelete) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Cannot manage a user with greater authority")
+		return
+	}
+	// Authorize the chosen content disposition before revoking any credential
+	// or touching any file, request, encryption record, or user row.
+	action, permission := authorization.DeleteFile, models.ApiPermDelete
+	if !request.DeleteFiles {
+		action, permission = authorization.ChangeFileOwner, models.ApiPermEdit
+		if !request.TransferToSelf {
+			sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, "Transfer requires explicit transferToSelf confirmation")
+			return
+		}
+	}
+	operationKey := key
+	if request.FileOperationKey != "" {
+		operationUser, candidate, valid := isValidApiKey(request.FileOperationKey, false, permission)
+		if !valid || operationUser.Id != user.Id || candidate.IsUploadRequestKey() {
+			sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Invalid file disposition credential")
+			return
+		}
+		operationKey = candidate
+	}
+	if !authorization.Authorize(user, action, userToDelete.Id) || !authorization.CanUseAPI(user, operationKey, permission) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "File disposition requires independent permission")
 		return
 	}
 	ctx, cancel := context.WithTimeout(chunkRequestContext(request.Request), 30*time.Second)

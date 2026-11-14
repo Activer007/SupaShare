@@ -1,9 +1,11 @@
 package apimutex
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Activer007/SupaShare/internal/test"
 )
@@ -147,4 +149,30 @@ func TestIndependentTypesDoNotNecessarilyBlock(t *testing.T) {
 	}()
 
 	<-done
+}
+
+// User deletion holds user gates while acquiring file gates. Equal stripe
+// indexes across those domains must not self-deadlock.
+func TestUserFileStripeCollisionIsIndependent(t *testing.T) {
+	const user = "42"
+	var file string
+	for i := 0; i < 10000; i++ {
+		candidate := fmt.Sprint(i)
+		if stripeIndex(TypeMetaData, candidate) == stripeIndex(TypeUser, user) {
+			file = candidate
+			break
+		}
+	}
+	if file == "" {
+		t.Fatal("collision fixture not found")
+	}
+	unlock := LockMany(TypeUser, user, user)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	release, err := LockContext(ctx, TypeMetaData, file)
+	if err != nil {
+		t.Fatal("user-to-file lock collision", err)
+	}
+	release()
 }

@@ -96,3 +96,26 @@ func (p DatabaseProvider) DeleteUser(id int) {
 	_, err := deleteOIDCUserScript.Do(conn, p.dbPrefix+oidcBindings, p.dbPrefix+oidcUsers, p.dbPrefix+prefixUsers+strconv.Itoa(id), id)
 	helper.Check(err)
 }
+
+// Compare and update in one Redis operation; never recreate a deleted user or
+// overwrite unrelated fields (such as Name and LastOnline) from an old snapshot.
+var updateUserResetCredentialsScript = redigo.NewScript(1, `
+ if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+ if (redis.call('HGET', KEYS[1], 'Password') or '') ~= ARGV[1] then return 0 end
+ if (redis.call('HGET', KEYS[1], 'ResetPassword') or '0') ~= ARGV[2] then return 0 end
+ if redis.call('HGET', KEYS[1], 'UserLevel') ~= ARGV[3] then return 0 end
+ if redis.call('HGET', KEYS[1], 'Permissions') ~= ARGV[4] then return 0 end
+ redis.call('HSET', KEYS[1], 'Password', ARGV[5], 'ResetPassword', ARGV[6])
+ return 1`)
+
+func (p DatabaseProvider) UpdateUserResetCredentials(expected models.User, password string, reset bool) (bool, error) {
+	if expected.Id <= 0 {
+		return false, nil
+	}
+	conn := p.pool.Get()
+	defer conn.Close()
+	updated, err := redigo.Int(updateUserResetCredentialsScript.Do(conn,
+		p.dbPrefix+prefixUsers+strconv.Itoa(expected.Id), expected.Password,
+		expected.ResetPassword, expected.UserLevel, expected.Permissions, password, reset))
+	return updated == 1, err
+}

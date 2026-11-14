@@ -103,3 +103,11 @@ func FileRequestForViewer(user models.User, request models.FileRequest) models.F
 	}
 	return request
 }
+
+// CanManageUserTarget prevents delegated managers from obtaining authority they
+// do not hold, including by demoting a privileged target before resetting it.
+func CanManageUserTarget(actor, target models.User) bool {
+	return validUser(actor) && validUser(target) && actor.HasPermissionManageUsers() &&
+		actor.Id != target.Id && !target.IsSuperAdmin() && actor.UserLevel <= target.UserLevel &&
+		target.Permissions & ^actor.Permissions == 0
+}

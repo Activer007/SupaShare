@@ -14,6 +14,7 @@ type stripe struct {
 }
 
 var stripes [numStripes]stripe
+var userStripes [numStripes]stripe
 var fileRequestStripes [numStripes]stripe
 var stripesOnce sync.Once
 var errNilLockContext = errors.New("nil lock context")
@@ -29,6 +30,8 @@ func initStripes() {
 		for i := range stripes {
 			stripes[i].token = make(chan struct{}, 1)
 			stripes[i].token <- struct{}{}
+			userStripes[i].token = make(chan struct{}, 1)
+			userStripes[i].token <- struct{}{}
 			fileRequestStripes[i].token = make(chan struct{}, 1)
 			fileRequestStripes[i].token <- struct{}{}
 		}
@@ -43,7 +46,10 @@ func getStripe(objectType int, key string) *stripe {
 
 func stripesForType(objectType int) *[numStripes]stripe {
 	switch objectType {
-	case TypeUser, TypeApiKey, TypeMetaData:
+	case TypeUser:
+		// User lifecycle operations may acquire file and API-key gates.
+		return &userStripes
+	case TypeApiKey, TypeMetaData:
 		return &stripes
 	case TypeFileRequest:
 		return &fileRequestStripes
