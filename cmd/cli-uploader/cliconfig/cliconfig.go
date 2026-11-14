@@ -38,8 +38,11 @@ func CreateLogin() {
 	if strings.HasPrefix(url, "http://") {
 		fmt.Println("WARNING: This URL uses an insecure connection. All data, including your API key, will be sent in plain text. This is not recommended for production use.")
 	}
-	fmt.Print("API key: ")
-	apikey := helper.ReadLine()
+	apikey, err := readLoginSecret("API key (input hidden): ")
+	if err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
 	if len(apikey) < 3 {
 		fmt.Println("ERROR: Invalid API key")
 		os.Exit(1)
@@ -88,8 +91,11 @@ func CreateLogin() {
 	fmt.Println("OK")
 	var e2ekey []byte
 	if isE2E {
-		fmt.Print("End-to-end encryption key: ")
-		e2ekeyString := helper.ReadLine()
+		e2ekeyString, readErr := readLoginSecret("End-to-end encryption key (input hidden): ")
+		if readErr != nil {
+			fmt.Println("ERROR:", readErr)
+			os.Exit(1)
+		}
 		e2ekey, err = base64.StdEncoding.DecodeString(e2ekeyString)
 		if err != nil {
 			fmt.Println("ERROR: Invalid end-to-end encryption key")
