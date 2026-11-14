@@ -22,6 +22,8 @@
 - 写入 canonical Cookie 时清除旧 host-only `/auth` Cookie；
   HTTPS 同时清除旧 host-only 根 Cookie。收到遗留 Cookie 时，
   HTTPS 或 HTTP 重名请求还会清理已知历史 /auth 路径。
+  子路径部署另按已配置的 ServerUrl 清理旧登录和轮换路径，例如
+  `/team/share` 与 `/team/share/auth`。登录、轮换、退出和重名请求共用这些路径。
   请求 Cookie 不包含 Domain/Path，不能声称自动清除所有任意路径和父域 Cookie。
 - 退出仍使用既有持久化 session lineage 撤销 successor，不改变 N02 认证代次校验。
 
@@ -86,3 +88,19 @@ HTTP 环境无浏览器 `__Host-` 安全保证，仅用于可信本机/开发环
   真实 HTTPS 浏览器 Cookie 接收、兄弟子域父域 Cookie、生产反代升级、
   其他浏览器及多实例混跑未验证。HTTPS Cookie 与 TLS 反代流程采用上述云端
   自动化结果，`TestAdminRenewalAuth` 的既有基线失败仍按原记录保留。
+
+### Auto Review 子路径修复
+
+首次审查指出子路径部署的旧 Cookie 清理不完整，现已从已配置的外部 URL 推导
+历史登录与轮换路径。HTTP 根 canonical Cookie 在清理时保留。
+
+新增 `TestN03SubpathLegacyCleanup`，覆盖 HTTP/HTTPS 的默认路径遗留 Cookie、
+登录写入、请求清理与退出。该测试和四项受改动影响的既有 N03 根路径测试
+分别在本地通过，修复后的 noaws 构建通过。
+
+Chrome 在新的隔离 context，通过本机反向代理的 `/team/share/` 完成实际登录。
+测试代理剥离请求前缀，并将服务端根路径 Location 映射回外部前缀。
+预先加入 `/team/share` 和 `/team/share/auth` 旧 Cookie 后，登录仍进入管理页，
+响应清除两条旧路径且保留新的根路径 Cookie。重新加入两条旧 Cookie 后，
+实际 token 请求依次返回 401、200。菜单退出返回 200 并回到子路径登录页，
+可认证会话数为 0。测试代理、服务和合成数据在验证后清理。

@@ -6,6 +6,8 @@ Manages the sessions for the admin user or to access password-protected files
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
@@ -125,11 +127,7 @@ func writeSessionCookie(w http.ResponseWriter, sessionString string, expiry time
 		c.MaxAge = -1
 	}
 	http.SetCookie(w, c)
-	// Historical rotation at /auth/token created a default /auth cookie.
-	clearLegacyCookie(w, "/auth")
-	if configuration.UsesHTTPS() {
-		clearLegacyCookie(w, "/")
-	}
+	clearLegacyCookies(w)
 }
 
 // The external configured scheme, not untrusted forwarding headers, chooses
@@ -155,6 +153,24 @@ func clearLegacyCookie(w http.ResponseWriter, path string) {
 		Secure: configuration.UsesHTTPS(), SameSite: http.SameSiteLaxMode})
 }
 
+func clearLegacyCookies(w http.ResponseWriter) {
+	clearLegacyCookie(w, "/auth")
+	if configuration.UsesHTTPS() {
+		clearLegacyCookie(w, "/")
+	}
+	external, err := url.Parse(configuration.Get().ServerUrl)
+	if err != nil {
+		return
+	}
+	// Pathless login and rotation cookies defaulted to the deployment directory
+	// and its /auth directory. An empty prefix must not delete HTTP's new root cookie.
+	deploymentPath := strings.TrimRight(external.EscapedPath(), "/")
+	if deploymentPath != "" {
+		clearLegacyCookie(w, deploymentPath)
+		clearLegacyCookie(w, deploymentPath+"/auth")
+	}
+}
+
 // Cookie headers do not carry Domain or Path. Clear the known historical
 // host-only paths without guessing parent domains. HTTPS ignores all remaining
 // legacy cookies. HTTP rejects ambiguous cookies until they are removed.
@@ -162,8 +178,5 @@ func clearLegacyRequestCookies(w http.ResponseWriter, r *http.Request) {
 	if len(r.CookiesNamed("session_token")) == 0 || (!configuration.UsesHTTPS() && len(r.CookiesNamed("session_token")) == 1) {
 		return
 	}
-	if configuration.UsesHTTPS() {
-		clearLegacyCookie(w, "/")
-	}
-	clearLegacyCookie(w, "/auth")
+	clearLegacyCookies(w)
 }

@@ -155,3 +155,55 @@ func TestN03LegacyRequestCleanupAndForwardedScheme(t *testing.T) {
 		}
 	}
 }
+
+func TestN03SubpathLegacyCleanup(t *testing.T) {
+	old := configuration.Get().ServerUrl
+	t.Cleanup(func() { configuration.Get().ServerUrl = old })
+	for _, base := range []string{"http://localhost:53842/team/share/", "https://files.example.invalid/team/share/"} {
+		t.Run(base, func(t *testing.T) {
+			configuration.Get().ServerUrl = base
+			login, _ := url.Parse(base + "login")
+			auth, _ := url.Parse(base + "auth/token")
+			newJar := func(withCanonical bool) *cookiejar.Jar {
+				jar, _ := cookiejar.New(nil)
+				// Leave Path unset to reproduce the old browser default-path behavior.
+				jar.SetCookies(login, []*http.Cookie{{Name: "session_token", Value: "legacy-login"}})
+				jar.SetCookies(auth, []*http.Cookie{{Name: "session_token", Value: "legacy-rotation"}})
+				if withCanonical {
+					jar.SetCookies(login, []*http.Cookie{{Name: sessionCookieName(), Value: "canonical", Path: "/", Secure: configuration.UsesHTTPS()}})
+				}
+				return jar
+			}
+			assertCanonical := func(jar *cookiejar.Jar) {
+				t.Helper()
+				cookies := jar.Cookies(auth)
+				if len(cookies) != 1 || cookies[0].Name != sessionCookieName() || cookies[0].Value != "canonical" {
+					t.Fatalf("subpath legacy cookies survived: %+v", cookies)
+				}
+			}
+			jar := newJar(false)
+			w := httptest.NewRecorder()
+			writeSessionCookie(w, "canonical", time.Now().Add(time.Hour))
+			jar.SetCookies(login, w.Result().Cookies())
+			assertCanonical(jar)
+
+			jar = newJar(true)
+			r := httptest.NewRequest("GET", auth.String(), nil)
+			for _, c := range jar.Cookies(auth) {
+				r.AddCookie(c)
+			}
+			w = httptest.NewRecorder()
+			clearLegacyRequestCookies(w, r)
+			jar.SetCookies(auth, w.Result().Cookies())
+			assertCanonical(jar)
+
+			jar = newJar(true)
+			w = httptest.NewRecorder()
+			LogoutSession(w, r)
+			jar.SetCookies(auth, w.Result().Cookies())
+			if cookies := jar.Cookies(auth); len(cookies) != 0 {
+				t.Fatalf("logout left subpath cookies: %+v", cookies)
+			}
+		})
+	}
+}
