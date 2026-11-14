@@ -680,6 +680,8 @@ func TestSEC052ServeFileFailure(t *testing.T) {
 	file.Encryption.IsEncrypted = true
 	file.Encryption.DecryptionKey = cipher
 	file.Encryption.Nonce = nonce
+	// Admission now compares the authoritative encryption identity.
+	database.SaveMetaData(file)
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	// ServeFile starts finite counter/traffic work. Drain it before TestMain
@@ -699,6 +701,7 @@ func TestSEC052ServeFileFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	file.Encryption = streamInfo
+	database.SaveMetaData(file)
 	w = httptest.NewRecorder()
 	aborted := false
 	synctest.Test(t, func(t *testing.T) {

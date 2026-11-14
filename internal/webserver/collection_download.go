@@ -61,7 +61,7 @@ func serveCollectionPresign(w http.ResponseWriter, r *http.Request, grant models
 		return
 	}
 	download, err := storage.PrepareManagementDownload(r.Context(), files, actor.Id, storage.ManagementDownloadOptions{
-		Count: r.Method != http.MethodHead, Archive: grant.IsArchive(),
+		Count: r.Method != http.MethodHead, Archive: grant.IsArchive(), Validate: presignDownloadValidator(grant, actor.Id, false),
 	})
 	if err != nil {
 		responseError(w, storage.ErrorFileNotFound)
@@ -157,7 +157,7 @@ func tryCollectionRetry(w http.ResponseWriter, r *http.Request, id string) bool 
 	// to charge this grant once, while several Range retries arrive together.
 	lease.mu.Lock()
 	download, err := storage.PrepareManagementDownload(r.Context(), lease.download.Files, actor.Id, storage.ManagementDownloadOptions{
-		RetryCharged: lease.charged, Count: r.Method != http.MethodHead, Archive: lease.grant.IsArchive(),
+		RetryCharged: lease.charged, Count: r.Method != http.MethodHead, Archive: lease.grant.IsArchive(), Validate: collectionRetryDownloadValidator(lease.grant, actor.Id, lease.deadline),
 	})
 	if err == nil {
 		lease.charged = download.Charged
@@ -170,4 +170,23 @@ func tryCollectionRetry(w http.ResponseWriter, r *http.Request, id string) bool 
 	defer download.Close()
 	download.Serve(w, r, lease.grant.Filename)
 	return true
+}
+
+// Revalidate both principals and the presign deadline while metadata is locked.
+// A separately authenticated retry lease already enforces its own bounded deadline.
+// No key locks here: API-key and metadata gates share a stripe domain.
+func presignDownloadValidator(grant models.Presign, actorID int, retry bool) func(models.File) bool {
+	return func(file models.File) bool {
+		actor, exists := database.GetUser(actorID)
+		issuer, valid := api.GetDownloadUser(grant.ApiKeyId)
+		return exists && valid && issuer.Id == grant.UserId && (retry || grant.Expiry >= time.Now().Unix()) &&
+			authorization.Authorize(actor, authorization.ReadFile, file.UserId) &&
+			authorization.Authorize(issuer, authorization.ReadFile, file.UserId)
+	}
+}
+
+// Waiting for the serialization or metadata gate must not extend the retry lease.
+func collectionRetryDownloadValidator(grant models.Presign, actorID int, deadline time.Time) func(models.File) bool {
+	validate := presignDownloadValidator(grant, actorID, true)
+	return func(file models.File) bool { return time.Now().Before(deadline) && validate(file) }
 }
