@@ -384,7 +384,12 @@ func handleGenerateAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	token, expiry, err := tokengeneration.Generate(user, permission)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		status := http.StatusBadRequest
+		if errors.Is(err, models.ErrTemporaryApiKeyQuotaExceeded) || errors.Is(err, models.ErrApiKeyAdmissionBusy) {
+			status = http.StatusTooManyRequests
+			w.Header().Set("Retry-After", "60")
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
@@ -431,13 +436,17 @@ func changePassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	token := newBrowserCSRF(w, r, csrftoken.TypePasswordChange)
+	if token == "" {
+		return
+	}
 	config := configuration.Get()
 	err = renderPage(w, r, "changepw",
 		&genericView{PublicName: config.PublicName,
 			MinPasswordLength: configuration.GetEnvironment().MinLengthPassword,
 			ErrorMessage:      errMessage,
 			CustomContent:     customStaticInfo,
-			CsrfToken:         newBrowserCSRF(w, r, csrftoken.TypePasswordChange)})
+			CsrfToken:         token})
 	helper.CheckIgnoreTimeout(err)
 }
 
@@ -610,6 +619,10 @@ func showLogin(w http.ResponseWriter, r *http.Request) {
 		failedCsrf = !validCsfr
 		failedLogin = true
 	}
+	token := newBrowserCSRF(w, r, csrftoken.TypeLogin)
+	if token == "" {
+		return
+	}
 	err = renderPage(w, r, "login", &LoginView{
 		IsFailedLogin: failedLogin,
 		IsFailedCsfr:  failedCsrf,
@@ -617,7 +630,7 @@ func showLogin(w http.ResponseWriter, r *http.Request) {
 		IsAdminView:   false,
 		PublicName:    configuration.Get().PublicName,
 		CustomContent: customStaticInfo,
-		CsrfToken:     newBrowserCSRF(w, r, csrftoken.TypeLogin),
+		CsrfToken:     token,
 	})
 	helper.CheckIgnoreTimeout(err)
 }

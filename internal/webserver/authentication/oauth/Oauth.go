@@ -8,8 +8,10 @@ import (
 	"net/url"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
+	"github.com/Activer007/SupaShare/internal/logging"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication"
+	"github.com/Activer007/SupaShare/internal/webserver/authentication/admission"
 	"github.com/Activer007/SupaShare/internal/webserver/errorHandling"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -67,9 +69,13 @@ func initLogin(w http.ResponseWriter, r *http.Request, screenType int) {
 		http.Error(w, "OIDC requires an HTTPS public URL (HTTP is only allowed on loopback for development)", http.StatusServiceUnavailable)
 		return
 	}
-	state, tx, ok := transactions.create()
+	if !admission.Allow(r, admission.OIDC) {
+		admission.Reject(w)
+		return
+	}
+	state, tx, ok := transactions.create(logging.GetIpAddress(r))
 	if !ok {
-		http.Error(w, "Too many pending login attempts; retry later", http.StatusServiceUnavailable)
+		admission.Reject(w)
 		return
 	}
 	setCallbackCookie(w, tx.binding)

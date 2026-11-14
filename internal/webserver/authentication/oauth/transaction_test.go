@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,7 @@ import (
 
 func TestTransactionSingleUseBindingExpiryAndCapacity(t *testing.T) {
 	s := transactionStore{entries: make(map[string]loginTransaction)}
-	state, tx, ok := s.create()
+	state, tx, ok := s.create("fixture-client")
 	if !ok {
 		t.Fatal("create")
 	}
@@ -38,25 +39,25 @@ func TestTransactionSingleUseBindingExpiryAndCapacity(t *testing.T) {
 	if accepted.Load() != 1 {
 		t.Fatalf("consumed %d times", accepted.Load())
 	}
-	state, tx, _ = s.create()
+	state, tx, _ = s.create("fixture-client")
 	tx.expires = time.Now().Add(-time.Second)
 	s.entries[state] = tx
 	if _, ok := s.consume(state, tx.binding); ok {
 		t.Fatal("expired accepted")
 	}
 	for i := 0; i < maxTransactions; i++ {
-		if _, _, ok := s.create(); !ok {
+		if _, _, ok := s.create(strconv.Itoa(i)); !ok {
 			t.Fatal("premature capacity")
 		}
 	}
-	if _, _, ok := s.create(); ok {
+	if _, _, ok := s.create("fixture-client"); ok {
 		t.Fatal("unbounded store")
 	}
 	for key, value := range s.entries {
 		value.expires = time.Now().Add(-time.Second)
 		s.entries[key] = value
 	}
-	if _, _, ok := s.create(); !ok {
+	if _, _, ok := s.create("fixture-client"); !ok {
 		t.Fatal("expired records not collected")
 	}
 }
@@ -101,7 +102,7 @@ func TestCallbackRejectsForgedEmptyDuplicateAndReplay(t *testing.T) {
 	configuration.Get().ServerUrl = "https://files.example.invalid/"
 	for _, kind := range []string{"forged", "empty", "duplicate-cookie", "duplicate-state", "replay", "wrong-browser", "legacy-cookie"} {
 		t.Run(kind, func(t *testing.T) {
-			state, tx, _ := transactions.create()
+			state, tx, _ := transactions.create("fixture-client")
 			request := httptest.NewRequest("GET", "/oauth-callback?state="+state+"&error=login_required", nil)
 			cookie := &http.Cookie{Name: callbackCookieName(), Value: tx.binding}
 			switch kind {
@@ -142,7 +143,7 @@ func TestCallbackRejectsForgedEmptyDuplicateAndReplay(t *testing.T) {
 }
 
 func TestCallbackProviderErrorConsumesTransaction(t *testing.T) {
-	state, tx, _ := transactions.create()
+	state, tx, _ := transactions.create("fixture-client")
 	req := httptest.NewRequest("GET", "/oauth-callback?state="+state+"&error=access_denied", nil)
 	req.AddCookie(&http.Cookie{Name: callbackCookieName(), Value: tx.binding})
 	rr := httptest.NewRecorder()
@@ -195,8 +196,8 @@ func TestOIDCTransportBoundary(t *testing.T) {
 }
 
 func TestStaleTabDoesNotClearNewLogin(t *testing.T) {
-	oldState, _, _ := transactions.create()
-	newState, newTx, _ := transactions.create()
+	oldState, _, _ := transactions.create("fixture-client")
+	newState, newTx, _ := transactions.create("fixture-client")
 	request := httptest.NewRequest("GET", "/oauth-callback?state="+oldState+"&code=old", nil)
 	request.AddCookie(&http.Cookie{Name: callbackCookieName(), Value: newTx.binding})
 	rr := httptest.NewRecorder()

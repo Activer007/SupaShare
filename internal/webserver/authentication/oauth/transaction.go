@@ -16,9 +16,11 @@ import (
 
 const transactionTTL = 10 * time.Minute
 const maxTransactions = 4096
+const maxTransactionsPerClient = 64
 
 type loginTransaction struct {
 	binding, verifier, nonce string
+	client                   string
 	expires                  time.Time
 }
 
@@ -31,20 +33,25 @@ type transactionStore struct {
 // another instance fail closed; no authenticated sessions are kept here.
 var transactions = transactionStore{entries: make(map[string]loginTransaction)}
 
-func (s *transactionStore) create() (string, loginTransaction, bool) {
+func (s *transactionStore) create(client string) (string, loginTransaction, bool) {
 	s.Lock()
 	defer s.Unlock()
 	now := time.Now()
+	owned := 0
 	for key, value := range s.entries {
 		if !value.expires.After(now) {
 			delete(s.entries, key)
+			continue
+		}
+		if value.client == client {
+			owned++
 		}
 	}
-	if len(s.entries) >= maxTransactions {
+	if client == "" || owned >= maxTransactionsPerClient || len(s.entries) >= maxTransactions {
 		return "", loginTransaction{}, false
 	}
 	state := helper.GenerateRandomString(32)
-	tx := loginTransaction{binding: helper.GenerateRandomString(32), verifier: oauth2.GenerateVerifier(), nonce: helper.GenerateRandomString(32), expires: now.Add(transactionTTL)}
+	tx := loginTransaction{client: client, binding: helper.GenerateRandomString(32), verifier: oauth2.GenerateVerifier(), nonce: helper.GenerateRandomString(32), expires: now.Add(transactionTTL)}
 	s.entries[state] = tx
 	return state, tx, true
 }

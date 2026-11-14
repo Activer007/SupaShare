@@ -1,6 +1,8 @@
 package webserver
 
 import (
+	"github.com/Activer007/SupaShare/internal/logging"
+	"github.com/Activer007/SupaShare/internal/webserver/authentication/admission"
 	"net/http"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
@@ -31,12 +33,32 @@ func browserCSRFBinding(r *http.Request) string {
 }
 
 func newBrowserCSRF(w http.ResponseWriter, r *http.Request, tokenType int) string {
+	purpose := admission.Login
+	switch tokenType {
+	case csrftoken.TypeLogout:
+		purpose = admission.Logout
+	case csrftoken.TypePasswordChange:
+		purpose = admission.PasswordChange
+	case csrftoken.TypeLogin:
+	default:
+		admission.Reject(w)
+		return ""
+	}
+	if !admission.Allow(r, purpose) {
+		admission.Reject(w)
+		return ""
+	}
 	binding := browserCSRFBinding(r)
 	if binding == "" {
 		binding = helper.GenerateRandomString(browserCSRFLength)
 	}
+	token := csrftoken.GenerateBoundForClient(tokenType, binding, logging.GetIpAddress(r))
+	if token == "" {
+		admission.Reject(w)
+		return ""
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.SetCookie(w, &http.Cookie{Name: browserCSRFCookieName(), Value: binding, Path: "/", MaxAge: 1800,
 		HttpOnly: true, Secure: configuration.UsesHTTPS(), SameSite: http.SameSiteLaxMode})
-	return csrftoken.GenerateBound(tokenType, binding)
+	return token
 }
