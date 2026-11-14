@@ -221,7 +221,7 @@ func TestAPIEntryPointsRejectCrossOrigin(t *testing.T) {
 		if err := uploadChunk(strings.NewReader("synthetic-file"), "synthetic-uuid", 0, 14, 14, nil); err == nil {
 			t.Error("uploadChunk accepted cross-origin")
 		}
-		if err := setE2eInfo(models.E2EInfoEncrypted{}); err == nil {
+		if err := setE2eInfo(models.E2EInfoEncrypted{}, "synthetic-lease"); err == nil {
 			t.Error("setE2eInfo accepted cross-origin")
 		}
 	}

@@ -282,9 +282,8 @@ function requestFileInfo(fileId, uid) {
                 return;
             }
             if (file.isEndToEndEncrypted === true) {
-                apiE2eMutexLockUnlock(false)
-                    .then(() => apiE2eGet())
-                    .then(freshData => {
+                withE2eLease(async lease => {
+                        const freshData = await apiE2eGet(lease);
                         let parseResult = GokapiE2EInfoParse(freshData);
                         if (parseResult instanceof Error) throw parseResult;
 
@@ -294,7 +293,7 @@ function requestFileInfo(fileId, uid) {
                         let info = GokapiE2EInfoEncrypt();
                         if (info instanceof Error) throw info;
 
-                        return apiE2eStore(info);
+                        return apiE2eStore(info, lease);
                     })
                     .then(() => {
                         GokapiE2EDecryptMenu();
@@ -304,11 +303,6 @@ function requestFileInfo(fileId, uid) {
                         file.accepted = false;
                         dropzoneObject._errorProcessing([file], err);
                         console.error('Error:', err);
-                    })
-                    .finally(() => {
-                        apiE2eMutexLockUnlock(true).catch(error => {
-                            console.error("Failed to release E2E mutex after write: " + error);
-                        });
                     });
             } else {
                 removeFileStatus(uid);

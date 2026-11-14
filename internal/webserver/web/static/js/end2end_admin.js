@@ -34,39 +34,16 @@ function checkIfE2EKeyIsSet() {
 }
 
 function getE2EInfo() {
-    apiE2eMutexLockUnlock(false)
-        .then(() => apiE2eGet())
-        .then(data => {
-            let err = GokapiE2EInfoParse(data);
-            if (err === null) {
-                GokapiE2EDecryptMenu();
-            } else {
-                displayError(err);
-                if (err.message === "cipher: message authentication failed") {
-                    invalidCipherRedirectConfim();
-                } else {
-                    displayError(t("e2e.getFailed") + data);
-                }
-            }
-        })
-        .catch(error => {
-            displayError(t("e2e.getFailed") + error);
-        })
-        .finally(() => {
-            apiE2eMutexLockUnlock(true).catch(error => {
-                console.error("Failed to release E2E mutex after read: " + error);
-            });
-        });
+    return withE2eLease(async lease => {
+        const data = await apiE2eGet(lease);
+        const err = GokapiE2EInfoParse(data);
+        if (err !== null) throw err;
+        GokapiE2EDecryptMenu();
+    }).catch(error => {
+        displayError(t("e2e.getFailed") + error);
+        if (error.message === "cipher: message authentication failed") invalidCipherRedirectConfim();
+    });
 }
-
-
-function storeE2EInfo(data) {
-    apiE2eStore(data)
-        .catch(error => {
-            displayError(t("e2e.storeFailed") + error);
-        });
-}
-
 
 function invalidCipherRedirectConfim() {
     if (confirm(t("e2e.invalidKey"))) {

@@ -2,6 +2,7 @@ package cliapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -492,29 +493,87 @@ func completeChunk(uid, filename string, filesize, realsize int64, useE2e bool, 
 	return parsedResult.FileInfo, nil
 }
 
-func lockUnlockE2eLock(isUnlock bool) error {
-	var url = gokapiUrl + "/e2e/mutex/lock"
-	if isUnlock {
-		url = gokapiUrl + "/e2e/mutex/unlock"
+func acquireE2eLease() (string, error) {
+	return acquireE2eLeaseContext(context.Background())
+}
+
+// Retry only admission rejection, never an already-started metadata transaction.
+func acquireE2eLeaseContext(parent context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	client := newHTTPClient(2*time.Second, false)
+	for attempt := 0; attempt < 4; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, gokapiUrl+"/e2e/mutex/lock", nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("apikey", apiKey)
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		busy := resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusTooManyRequests
+		if busy {
+			resp.Body.Close()
+			if attempt == 3 {
+				return "", errors.New("E2E metadata is busy; retry the operation")
+			}
+			timer := time.NewTimer(time.Duration(attempt+1) * 100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return "", fmt.Errorf("E2E lease acquisition HTTP status %d", resp.StatusCode)
+		}
+		var response struct {
+			LeaseToken string `json:"leaseToken"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		resp.Body.Close()
+		if err != nil {
+			return "", err
+		}
+		if response.LeaseToken == "" {
+			return "", errors.New("server did not provide an E2E lease; upgrade the server")
+		}
+		return response.LeaseToken, nil
 	}
-	_, err := getUrl(url, []header{}, false)
+	return "", errors.New("E2E metadata is busy; retry the operation")
+}
+
+func releaseE2eLease(lease string) error {
+	if lease == "" {
+		return errors.New("missing E2E lease")
+	}
+	_, err := getUrl(gokapiUrl+"/e2e/mutex/unlock", []header{{"e2eLease", lease}}, false)
 	return err
 }
 
 // GetE2eInfo returns the end-to-end encryption information of the SupaShare server for this user
-func GetE2eInfo(unlockLock bool) (models.E2EInfoPlainText, error) {
-	var result models.E2EInfoEncrypted
-	var fileInfo models.E2EInfoPlainText
-
-	err := lockUnlockE2eLock(false)
+func GetE2eInfo(_ bool) (models.E2EInfoPlainText, error) {
+	// Keep the exported call shape, but never leak a lease across calls.
+	lease, err := acquireE2eLease()
 	if err != nil {
 		return models.E2EInfoPlainText{}, err
 	}
-	if unlockLock {
-		defer lockUnlockE2eLock(true)
-	}
+	defer releaseE2eLease(lease)
+	return readE2eInfo(lease)
+}
 
-	resultJson, err := getUrl(gokapiUrl+"/e2e/get", []header{}, false)
+func readE2eInfo(lease string) (models.E2EInfoPlainText, error) {
+	var result models.E2EInfoEncrypted
+	var fileInfo models.E2EInfoPlainText
+
+	resultJson, err := getUrl(gokapiUrl+"/e2e/get", []header{{"e2eLease", lease}}, false)
 	if err != nil {
 		return models.E2EInfoPlainText{}, err
 	}
@@ -533,8 +592,12 @@ func GetE2eInfo(unlockLock bool) (models.E2EInfoPlainText, error) {
 }
 
 func addE2EFileInfo(file models.E2EFile) error {
-	infoPlain, err := GetE2eInfo(false)
-	defer lockUnlockE2eLock(true)
+	lease, err := acquireE2eLease()
+	if err != nil {
+		return err
+	}
+	defer releaseE2eLease(lease)
+	infoPlain, err := readE2eInfo(lease)
 	if err != nil {
 		return err
 	}
@@ -543,12 +606,15 @@ func addE2EFileInfo(file models.E2EFile) error {
 	if err != nil {
 		return err
 	}
-	return setE2eInfo(output)
+	return setE2eInfo(output, lease)
 }
 
 // setE2eInfo sets the end-to-end encryption information of the SupaShare server for this user
 // it does NOT set a lock itself on the SupaShare server
-func setE2eInfo(input models.E2EInfoEncrypted) error {
+func setE2eInfo(input models.E2EInfoEncrypted, lease string) error {
+	if lease == "" {
+		return errors.New("missing E2E lease")
+	}
 	outputJson, err := json.Marshal(input)
 	if err != nil {
 		return err
@@ -572,12 +638,16 @@ func setE2eInfo(input models.E2EInfoEncrypted) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", apiKey)
+	req.Header.Set("e2eLease", lease)
 
-	resp, err := newHTTPClient(0, false).Do(req)
+	resp, err := newHTTPClient(30*time.Second, false).Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("E2E metadata update rejected: HTTP status %d", resp.StatusCode)
+	}
 	return nil
 }
 
