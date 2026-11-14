@@ -534,10 +534,14 @@ func RotateSession(id, replacementID string, expected, replacement models.Sessio
 	// Revoke the old credential before saving its successor. Keep an alias until
 	// its original cookie expires, so a browser still holding it can log out
 	// the replacement. Aliases never authenticate and survive process restarts.
+	user, exists := db.GetUser(current.UserId)
+	if !exists || user.AuthGeneration != current.AuthGeneration || replacement.AuthGeneration != current.AuthGeneration {
+		return false
+	}
 	current.Successor = replacementID
 	db.SaveSession(id, current)
-	db.SaveSession(replacementID, replacement)
-	return true
+	saved, err := db.SaveSessionIfCredentials(replacementID, replacement, user)
+	return err == nil && saved
 }
 
 // DeleteSession revokes a session and all of its rotated successors.
@@ -652,13 +656,29 @@ func EditSuperAdmin(username, passwordHash string) error {
 		db.SaveUser(newAdmin, true)
 		return nil
 	}
-	if username != "" {
-		user.Name = username
-	}
 	if passwordHash != "" {
+		changed, err := db.UpdateUserResetCredentials(user, passwordHash, user.ResetPassword)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return errors.New("superadmin credentials changed concurrently; retry setup")
+		}
 		user.Password = passwordHash
+		user.AuthGeneration++
 	}
-	db.SaveUser(user, false)
+	if username != "" {
+		updated := user
+		updated.Name = username
+		changed, err := db.UpdateUserProfile(user, updated)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return errors.New("superadmin profile changed concurrently; retry setup")
+		}
+	}
+
 	return nil
 }
 
@@ -713,3 +733,16 @@ func CreateUserApiKey(key models.ApiKey) (bool, error) {
 
 // UpdateApiKeyProperties updates mutable properties only if the credential still exists.
 func UpdateApiKeyProperties(key models.ApiKey) (bool, error) { return db.UpdateApiKeyProperties(key) }
+
+// SaveSessionIfCredentials binds issuance to the exact credential snapshot verified
+// before password hashing. The provider performs comparison and insertion atomically.
+func SaveSessionIfCredentials(id string, session models.Session, expected models.User) (bool, error) {
+	return db.SaveSessionIfCredentials(id, session, expected)
+}
+func RehashPassword(expected models.User, password string) (bool, error) {
+	return db.RehashPassword(expected, password)
+}
+
+func UpdateUserProfile(expected models.User, updated models.User) (bool, error) {
+	return db.UpdateUserProfile(expected, updated)
+}

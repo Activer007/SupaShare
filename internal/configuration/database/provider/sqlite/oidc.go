@@ -49,7 +49,7 @@ func (p DatabaseProvider) GetOIDCUser(issuer, subject string) (models.User, bool
 		return models.User{}, false, models.ErrOIDCInvalidIdentity
 	}
 	var u schemaUser
-	err := p.sqliteDb.QueryRow(`SELECT u.* FROM Users u JOIN OIDCIdentities i ON u.Id=i.UserID WHERE i.Issuer=? AND i.Subject=?`, issuer, subject).Scan(&u.Id, &u.Name, &u.Password, &u.Permissions, &u.UserLevel, &u.LastOnline, &u.ResetPassword)
+	err := p.sqliteDb.QueryRow(`SELECT u.* FROM Users u JOIN OIDCIdentities i ON u.Id=i.UserID WHERE i.Issuer=? AND i.Subject=?`, issuer, subject).Scan(&u.Id, &u.Name, &u.Password, &u.Permissions, &u.UserLevel, &u.LastOnline, &u.ResetPassword, &u.AuthGeneration)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.User{}, false, nil
 	}

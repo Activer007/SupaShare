@@ -93,6 +93,7 @@ func TestCreateSession(t *testing.T) {
 	test.IsEqualInt(t, user.Id, 5)
 
 	w, _, _, _ = getRecorder(nil)
+	database.SaveUser(models.User{Id: 50, Name: "oauth-test"}, false)
 	CreateSession(w, true, 20, 50)
 	cookies = w.Result().Cookies()
 	newOauthSession := cookies[0].Value

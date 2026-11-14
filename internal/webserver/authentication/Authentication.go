@@ -251,8 +251,7 @@ func CheckOauthUserAndRedirect(w http.ResponseWriter, r *http.Request, userInfo 
 		if errCreate != nil {
 			return errCreate
 		}
-		if ok {
-			sessionmanager.CreateSession(w, true, authSettings.OAuthRecheckInterval, user.Id)
+		if ok && sessionmanager.CreateSessionForUser(w, true, authSettings.OAuthRecheckInterval, user) {
 			http.Redirect(w, r, "admin", http.StatusTemporaryRedirect)
 			return nil
 		}
@@ -348,8 +347,12 @@ func checkUsernameAndPassword(username, password string, validCsrf bool) (models
 		return models.User{}, false, true
 	}
 	if isLegacy {
-		user.Password = configuration.HashPassword(password, false, "")
-		database.SaveUser(user, false)
+		newHash := configuration.HashPassword(password, false, "")
+		updated, err := database.RehashPassword(user, newHash)
+		if err != nil || !updated {
+			return models.User{}, false, true
+		}
+		user.Password = newHash
 	}
 	return user, true, true
 }

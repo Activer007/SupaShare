@@ -22,7 +22,7 @@ type DatabaseProvider struct {
 }
 
 // DatabaseSchemeVersion contains the version number to be expected from the current database. If lower, an upgrade will be performed
-const DatabaseSchemeVersion = 21
+const DatabaseSchemeVersion = 22
 
 // New returns an instance
 func New(dbConfig models.DbConnection) (DatabaseProvider, error) {
@@ -41,6 +41,10 @@ func (p DatabaseProvider) Upgrade(currentDbVersion int) {
 		fmt.Println("Error: SupaShare runs >=v2.0.0, but Database is <v2.0.0. Please update to v2.0.0 first.")
 		osExit(1)
 		return
+	}
+	if currentDbVersion < 22 {
+		helper.Check(p.initAuthGeneration())
+		p.DeleteAllSessions()
 	}
 	// < v2.2.0-dev
 	if currentDbVersion < 11 {
@@ -304,6 +308,9 @@ func (p DatabaseProvider) createNewDatabase() error {
 		return err
 	}
 	if err := p.initDeliveries(); err != nil {
+		return err
+	}
+	if err := p.initAuthGeneration(); err != nil {
 		return err
 	}
 	p.SetDbVersion(DatabaseSchemeVersion)

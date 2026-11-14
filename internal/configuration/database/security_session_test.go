@@ -46,6 +46,7 @@ func TestSEC021SessionMutationOrdering(t *testing.T) {
 			for _, mode := range []string{"user", "all"} {
 				t.Run(mode, func(t *testing.T) {
 					store.DeleteAllSessions()
+					store.SaveUser(models.User{Id: 9021, Name: "session-owner"}, false)
 
 					barrier := sessionAliasBarrier{Database: store, deleted: make(chan struct{}), resume: make(chan struct{})}
 					db = barrier

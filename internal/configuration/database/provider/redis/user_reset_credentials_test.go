@@ -26,6 +26,7 @@ func TestUpdateUserResetCredentials(t *testing.T) {
 	want := current
 	want.Password = "new-hash"
 	want.ResetPassword = true
+	want.AuthGeneration++
 	got, found := p.GetUser(original.Id)
 	if !found || got != want {
 		t.Fatalf("unrelated fields lost: got %#v, want %#v", got, want)
@@ -46,9 +47,12 @@ func TestUpdateUserResetCredentials(t *testing.T) {
 		{"permissions", func(u *models.User) { u.Permissions = models.UserPermissionNone }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			p.DeleteUser(original.Id)
+			p.SaveUser(original, false)
 			changed := original
 			tc.change(&changed)
 			p.SaveUser(changed, false)
+			changed, _ = p.GetUser(original.Id)
 			updated, err := p.UpdateUserResetCredentials(original, "must-not-write", true)
 			if err != nil || updated {
 				t.Fatalf("stale CAS = %v, %v", updated, err)
@@ -61,6 +65,7 @@ func TestUpdateUserResetCredentials(t *testing.T) {
 	}
 
 	// Concurrent reset requests using the same snapshot must not both succeed.
+	p.DeleteUser(original.Id)
 	p.SaveUser(original, false)
 	type outcome struct {
 		updated bool

@@ -29,7 +29,7 @@ func IsValidSession(w http.ResponseWriter, r *http.Request, isOauth bool, OAuthR
 			session, ok := database.GetSession(sessionString)
 			if ok {
 				user, userExists := database.GetUser(session.UserId)
-				if !userExists {
+				if !userExists || user.AuthGeneration != session.AuthGeneration {
 					return user, false
 				}
 				return user, useSession(w, sessionString, session, isOauth, OAuthRecheckInterval)
@@ -50,6 +50,7 @@ func useSession(w http.ResponseWriter, id string, session models.Session, isOaut
 	}
 	if session.RenewAt < time.Now().Unix() {
 		replacementID, replacement := buildSession(isOauth, OAuthRecheckInterval, session.UserId)
+		replacement.AuthGeneration = session.AuthGeneration
 		if isOauth {
 			// Rotation is not a fresh identity/group check. Keep the deadline
 			// established by the authenticated login, including in the cookie.
@@ -65,10 +66,24 @@ func useSession(w http.ResponseWriter, id string, session models.Session, isOaut
 }
 
 // CreateSession creates a new session - called after login with correct username / password
+// CreateSession is retained for trusted internal/test callers. Password login must
+// use CreateSessionForUser with the snapshot returned by password verification.
 func CreateSession(w http.ResponseWriter, isOauth bool, OAuthRecheckInterval int, userId int) {
-	sessionString, session := buildSession(isOauth, OAuthRecheckInterval, userId)
-	database.SaveSession(sessionString, session)
+	user, ok := database.GetUser(userId)
+	if ok {
+		CreateSessionForUser(w, isOauth, OAuthRecheckInterval, user)
+	}
+}
+
+func CreateSessionForUser(w http.ResponseWriter, isOauth bool, OAuthRecheckInterval int, verified models.User) bool {
+	sessionString, session := buildSession(isOauth, OAuthRecheckInterval, verified.Id)
+	session.AuthGeneration = verified.AuthGeneration
+	saved, err := database.SaveSessionIfCredentials(sessionString, session, verified)
+	if err != nil || !saved {
+		return false
+	}
 	writeSessionCookie(w, sessionString, time.Unix(session.ValidUntil, 0))
+	return true
 }
 
 func buildSession(isOauth bool, OAuthRecheckInterval int, userId int) (string, models.Session) {
