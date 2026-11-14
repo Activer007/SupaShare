@@ -39,7 +39,7 @@ import (
 )
 
 // versionGokapi is the current version in readable form.
-const versionGokapi = "2.16.6"
+const versionGokapi = "2.18.0"
 
 // The following calls update the version numbers, update documentation, minify Js/CSS and build the WASM modules
 //go:generate go run "../../build/go-generate/updateVersionNumbers.go"
