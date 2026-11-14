@@ -731,8 +731,11 @@ func CreateUserApiKey(key models.ApiKey) (bool, error) {
 	return db.CreateUserApiKey(key)
 }
 
-// UpdateApiKeyProperties updates mutable properties only if the credential still exists.
-func UpdateApiKeyProperties(key models.ApiKey) (bool, error) { return db.UpdateApiKeyProperties(key) }
+// Field-scoped updates preserve unrelated concurrent changes and never upsert.
+func UpdateApiKeyName(id, name string) (bool, error) { return db.UpdateApiKeyName(id, name) }
+func UpdateApiKeyPermission(id string, permission models.ApiPermission, grant bool) (bool, error) {
+	return db.UpdateApiKeyPermission(id, permission, grant)
+}
 
 // SaveSessionIfCredentials binds issuance to the exact credential snapshot verified
 // before password hashing. The provider performs comparison and insertion atomically.

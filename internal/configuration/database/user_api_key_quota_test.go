@@ -117,15 +117,15 @@ func TestUserApiKeyQuota(t *testing.T) {
 			stale.Permissions = models.ApiPermUpload
 			stale.UserId = 999
 			stale.IsSystemKey = true
-			if ok, err := a.UpdateApiKeyProperties(stale); !ok || err != nil {
+			if ok, err := a.UpdateApiKeyName(stale.Id, stale.FriendlyName); !ok || err != nil {
 				t.Fatal("update failed", ok, err)
 			}
 			updated, _ := a.GetApiKey(stale.Id)
-			if updated.UserId != 1 || updated.IsSystemKey || updated.FriendlyName != "changed" || updated.Permissions != models.ApiPermUpload {
+			if updated.UserId != 1 || updated.IsSystemKey || updated.FriendlyName != "changed" || updated.Permissions != got.Permissions {
 				t.Fatal("update changed immutable properties")
 			}
 			a.DeleteApiKey("boundary")
-			if ok, err := b.UpdateApiKeyProperties(stale); ok || err != nil {
+			if ok, err := b.UpdateApiKeyName(stale.Id, stale.FriendlyName); ok || err != nil {
 				t.Fatal("stale update revived removed key", ok, err)
 			}
 			if _, ok := a.GetApiKey(stale.Id); ok {
