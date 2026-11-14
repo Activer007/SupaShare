@@ -730,11 +730,10 @@ func apiDownloadSingle(w http.ResponseWriter, r requestParser, user models.User,
 	}
 	if !request.PresignUrl {
 		if file.IsFileRequest() {
-			serveCollectionDownload(w, request.WebRequest, []models.File{file}, "", user, false)
+			serveCollectionDownload(w, request.WebRequest, []models.File{file}, "", user, apiKey, false)
 			return
 		}
-		forceDecryption := file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted
-		storage.ServeFile(file, w, request.WebRequest, true, request.IncreaseCounter, forceDecryption, false)
+		serveOrdinaryDownload(w, request.WebRequest, []models.File{file}, "", user, apiKey, false, request.IncreaseCounter)
 		return
 	}
 	createAndOutputPresignedUrl([]string{file.Id}, w, "", apiKey, false)
@@ -764,25 +763,47 @@ func apiDownloadZip(w http.ResponseWriter, r requestParser, user models.User, ap
 	if !request.PresignUrl {
 		for _, file := range requestedFiles {
 			if file.IsFileRequest() {
-				serveCollectionDownload(w, request.WebRequest, requestedFiles, request.Filename, user, true)
+				serveCollectionDownload(w, request.WebRequest, requestedFiles, request.Filename, user, apiKey, true)
 				return
 			}
 		}
-		storage.ServeFilesAsZip(requestedFiles, request.Filename, w, request.WebRequest)
+		serveOrdinaryDownload(w, request.WebRequest, requestedFiles, request.Filename, user, apiKey, true, false)
 		return
 	}
 	createAndOutputPresignedUrl(requestedFileIds, w, request.Filename, apiKey, true)
 }
 
+// Ordinary API downloads retain the explicit counter option, but use the same
+// all-member admission as management downloads before any payload is emitted.
+func serveOrdinaryDownload(w http.ResponseWriter, r *http.Request, files []models.File, filename string, user models.User, key models.ApiKey, archive, count bool) {
+	download, err := storage.PrepareManagementDownload(r.Context(), files, user.Id, storage.ManagementDownloadOptions{
+		Archive: archive, CountOrdinary: count,
+		Validate: func(file models.File) bool {
+			actor, valid := GetDownloadUser(key.Id)
+			return valid && actor.Id == user.Id && authorization.Authorize(actor, authorization.ReadFile, file.UserId)
+		},
+	})
+	if err != nil {
+		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Download unavailable")
+		return
+	}
+	defer download.Close()
+	download.Serve(w, r, filename)
+}
+
 // Collection allowances are enforced by the server, regardless of the optional
 // increaseCounter header used by ordinary management downloads.
-func serveCollectionDownload(w http.ResponseWriter, r *http.Request, files []models.File, filename string, user models.User, archive bool) {
+func serveCollectionDownload(w http.ResponseWriter, r *http.Request, files []models.File, filename string, user models.User, key models.ApiKey, archive bool) {
 	if !storage.ValidateManagementRange(r, files, archive) {
 		sendError(w, http.StatusRequestedRangeNotSatisfiable, errorcodes.InvalidUserInput, "Invalid download range")
 		return
 	}
 	download, err := storage.PrepareManagementDownload(r.Context(), files, user.Id, storage.ManagementDownloadOptions{
 		Count: r.Method != http.MethodHead, Archive: archive,
+		Validate: func(file models.File) bool {
+			actor, valid := GetDownloadUser(key.Id)
+			return valid && actor.Id == user.Id && authorization.Authorize(actor, authorization.ReadFile, file.UserId)
+		},
 	})
 	if err != nil {
 		sendError(w, http.StatusNotFound, errorcodes.NotFound, "Download unavailable")

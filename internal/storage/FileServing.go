@@ -34,10 +34,8 @@ import (
 	"github.com/Activer007/SupaShare/internal/storage/filesystem/s3filesystem/aws"
 	"github.com/Activer007/SupaShare/internal/storage/processingstatus"
 	"github.com/Activer007/SupaShare/internal/uploadquota"
-	"github.com/Activer007/SupaShare/internal/webserver/api/mutex/apimutex"
 	"github.com/Activer007/SupaShare/internal/webserver/downloadstatus"
 	"github.com/Activer007/SupaShare/internal/webserver/headers"
-	"github.com/Activer007/SupaShare/internal/webserver/sse"
 	"github.com/jinzhu/copier"
 )
 
@@ -695,26 +693,21 @@ func GetFileByHotlink(id string) (models.File, bool) {
 	return GetFile(fileId)
 }
 
-// ServeFile subtracts a download allowance and serves the file to the browser
-// Returns false if the file expired during the request (most likely race condition due to parallel downloads, requires recheckExpiry)
+// ServeFile is a compatibility entry point. Callers authenticate the snapshot
+// before entry; any changed security metadata fails closed at admission.
 func ServeFile(file models.File, w http.ResponseWriter, r *http.Request, forceDownload, increaseCounter, forceDecryption, recheckExpiry bool) bool {
-	apimutex.Lock(apimutex.TypeMetaData, file.Id)
-	if recheckExpiry {
-		if !file.UnlimitedDownloads {
-			file.DownloadsRemaining = database.GetDownloadsRemaining(file.Id)
-		}
-		if IsExpiredFile(file, time.Now().Unix()) {
-			apimutex.Unlock(apimutex.TypeMetaData, file.Id)
-			return false
-		}
+	current, guard, ok := admitPublicDownload(r.Context(), file, increaseCounter, recheckExpiry, false, "")
+	if !ok {
+		return false
 	}
-	if increaseCounter {
-		file.DownloadsRemaining = file.DownloadsRemaining - 1
-		file.DownloadCount = file.DownloadCount + 1
-		database.IncreaseDownloadCount(file.Id, !file.UnlimitedDownloads)
-		go sse.PublishDownloadCount(file)
-	}
-	apimutex.Unlock(apimutex.TypeMetaData, file.Id)
+	defer downloadstatus.SetComplete(guard)
+	return serveAdmittedFile(current, w, r, forceDownload, forceDecryption)
+}
+
+// serveAdmittedFile only transfers an already admitted immutable snapshot. Its
+// caller owns the admission guard and any allowance charge. Transport guards
+// retain the existing protection for failed transfers and remote redirects.
+func serveAdmittedFile(file models.File, w http.ResponseWriter, r *http.Request, forceDownload, forceDecryption bool) bool {
 
 	logging.LogDownload(file, r, configuration.Get().SaveIp)
 	go serverstats.AddTraffic(uint64(file.SizeBytes))
@@ -722,8 +715,7 @@ func ServeFile(file models.File, w http.ResponseWriter, r *http.Request, forceDo
 	w = response
 
 	if !file.IsLocalStorage() {
-		// If non-blocking, we are not setting a download complete status as there is no reliable way to
-		// confirm that the file has been completely downloaded. It expires automatically after 24 hours.
+		// Redirect completion cannot be observed; its transport guard expires after 24 hours.
 		statusId := downloadstatus.SetDownload(file)
 		isBlocking, err := aws.ServeFile(w, r, file, forceDownload, forceDecryption)
 		if err != nil {

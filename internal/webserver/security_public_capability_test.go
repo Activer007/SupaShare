@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/Activer007/SupaShare/internal/configuration"
 	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/test/securityfixture"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/downloadPasswordToken"
+	"github.com/alicebob/miniredis/v2"
 )
 
 // Public sharing is an explicit read capability, independent of ownership.
@@ -70,6 +70,12 @@ func TestSEC020PublicDownloadMatrix(t *testing.T) {
 						protected := strings.HasPrefix(state, "password-") || state == "request-key" || state == "session-id" || state == "api-key"
 						if protected {
 							file.PasswordHash = hash
+						}
+						// A valid hotlink fixture must have the same image eligibility as
+						// production AddHotlink; plain text hotlinks now fail closed.
+						if endpoint == "hotlink" {
+							file.Name = "synthetic.png"
+							file.ContentType = "image/png"
 						}
 						file.HotlinkId = rand.Text()
 						database.SaveMetaData(file)

@@ -39,6 +39,12 @@ type ManagementDownloadOptions struct {
 	RetryCharged bool
 	Count        bool
 	Archive      bool
+	// CountOrdinary preserves the explicit API increaseCounter option, independently
+	// of the collection-only allowance policy.
+	CountOrdinary bool
+	// Validate runs under all metadata locks. It must not acquire metadata/API-key
+	// locks itself. Callers use it to re-read credential/capability authority.
+	Validate func(models.File) bool
 }
 
 func (d *ManagementDownload) Close() {
@@ -99,7 +105,7 @@ func (d *ManagementDownload) Serve(w http.ResponseWriter, r *http.Request, filen
 	}
 	if !d.Archive {
 		file := d.Files[0]
-		ServeFile(file, w, r, true, false, file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted, false)
+		serveAdmittedFile(file, w, r, true, file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted)
 		return
 	}
 	ServeFilesAsZip(d.Files, filename, w, r)
@@ -140,9 +146,13 @@ func PrepareManagementDownload(ctx context.Context, snapshots []models.File, act
 			(!file.UnlimitedTime && file.ExpireAt < time.Now().Unix()) ||
 			(!(options.RetryCharged && file.IsFileRequest()) && !file.UnlimitedDownloads && file.DownloadsRemaining < 1) ||
 			!authorization.Authorize(actor, authorization.ReadFile, file.UserId) ||
+			(options.Validate != nil && !options.Validate(file)) ||
 			!checkIfValidAws(file) || file.SizeBytes < 0 {
 			return nil, ErrDownloadUnavailable
 		}
+		// Legacy ordinary raw rows use zero to mean unknown size. Preserve
+		// their established read compatibility; collection/encrypted rows stay strict.
+		legacyUnknownSize := !file.IsFileRequest() && !file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted && file.SizeBytes == 0
 		expectedSize := file.SizeBytes
 		if file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted {
 			// Server-encrypted metadata stores plaintext size. E2E metadata
@@ -171,12 +181,12 @@ func PrepareManagementDownload(ctx context.Context, snapshots []models.File, act
 				return nil, ErrDownloadUnavailable
 			}
 			_ = handle.Close()
-			if actualSize != expectedSize {
+			if actualSize != expectedSize && !legacyUnknownSize {
 				return nil, ErrDownloadUnavailable
 			}
 		} else {
 			exists, actualSize, err := aws.FileExistsContext(ctx, file)
-			if err != nil || !exists || actualSize != expectedSize {
+			if err != nil || !exists || (actualSize != expectedSize && !legacyUnknownSize) {
 				return nil, ErrDownloadUnavailable
 			}
 		}
@@ -187,9 +197,13 @@ func PrepareManagementDownload(ctx context.Context, snapshots []models.File, act
 	for _, file := range download.Files {
 		download.guards = append(download.guards, downloadstatus.SetDownload(file))
 	}
-	if options.Count && !actor.IsAdmin() && !options.RetryCharged {
+	if (options.Count && !actor.IsAdmin() && !options.RetryCharged) || options.CountOrdinary {
 		for i, file := range download.Files {
-			if !file.IsFileRequest() {
+			if file.IsFileRequest() {
+				if !options.Count || actor.IsAdmin() || options.RetryCharged {
+					continue
+				}
+			} else if !options.CountOrdinary {
 				continue
 			}
 			database.IncreaseDownloadCount(file.Id, !file.UnlimitedDownloads)

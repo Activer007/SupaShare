@@ -306,8 +306,8 @@ func redirectFromFilename(w http.ResponseWriter, r *http.Request) {
 	addNoCacheHeader(w)
 	id := r.PathValue("id")
 	file, ok := storage.GetFile(id)
-	if !ok {
-		redirect(w, r, "../../error")
+	if !ok || file.IsFileRequest() {
+		redirectOnIncorrectId(w, r, "../../error")
 		return
 	}
 
@@ -713,7 +713,10 @@ func showDownload(w http.ResponseWriter, r *http.Request) {
 				}
 				file.PasswordHash = newHash
 			}
-			writeFilePwCookie(w, file)
+			if !writeVerifiedFilePwCookie(w, r, file) {
+				http.Error(w, "File state changed; retry the download", http.StatusConflict)
+				return
+			}
 			// redirect so that there is no post data to be resent if user refreshes page
 			redirect(w, r, "d?id="+file.Id)
 			return
@@ -741,7 +744,7 @@ func showHotlink(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(imageExpiredPicture)
 		return
 	}
-	validFile := storage.ServeFile(file, w, r, false, true, false, true)
+	validFile := storage.ServePublicFile(file, w, r, false, hotlinkId)
 	if !validFile {
 		// Only called if the file has already expired during the expiry check of storage.ServeFile()
 		w.Header().Set("Content-Type", "image/svg+xml")
@@ -1217,18 +1220,21 @@ func downloadPresigned(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Admit every ordinary ZIP member before emitting any archive headers or names.
+	download, err := storage.PrepareManagementDownload(r.Context(), files, consumer.Id, storage.ManagementDownloadOptions{
+		Archive: presignedUrl.IsArchive(), Validate: presignDownloadValidator(presignedUrl, consumer.Id, false),
+	})
+	if err != nil {
+		responseError(w, storage.ErrorInvalidPresign)
+		return
+	}
+	defer download.Close()
 	if !presign.Consume(presignedUrl.Id) {
 		responseError(w, storage.ErrorInvalidPresign)
 		return
 	}
+	download.Serve(w, r, presignedUrl.Filename)
 
-	if !presignedUrl.IsArchive() {
-		file := files[0]
-		forceDecryption := file.Encryption.IsEncrypted && !file.Encryption.IsEndToEndEncrypted
-		storage.ServeFile(file, w, r, true, false, forceDecryption, false)
-		return
-	}
-	storage.ServeFilesAsZip(files, presignedUrl.Filename, w, r)
 }
 
 func serveFile(id string, isRootUrl bool, w http.ResponseWriter, r *http.Request) {
@@ -1253,7 +1259,7 @@ func serveFile(id string, isRootUrl bool, w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	validFile := storage.ServeFile(savedFile, w, r, true, true, false, true)
+	validFile := storage.ServePublicFile(savedFile, w, r, true, "")
 	if !validFile {
 		// Only called if the file has already expired during the expiry check of storage.ServeFile()
 		if isRootUrl {
