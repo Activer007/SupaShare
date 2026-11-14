@@ -8,6 +8,36 @@ Overview of all changes
 -----------------------
 
 
+v2.18.0 (2026-11-14; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Security rollup of merged PRs #87--98 (2026-11-13--14); this is not a GitHub
+Release, deployment or claim that all findings are resolved. Unmerged group E
+upload reservation/slow-upload changes are excluded.
+
+* Bound error/presign registries and ordinary API-key creation/name growth.
+* Bind OIDC users to verified issuer/subject rather than email; preserve OAuth
+  recheck deadlines through session rotation. Correlate login with one-use,
+  browser-bound state transactions, host-prefixed cookies, S256 PKCE and nonce.
+* Restrict File Request invitation credentials to owners and confine Internal
+  users awaiting password changes to password change/logout. Normalize low-cost
+  login failure paths without claiming constant-time responses.
+* Persist rotation lineage so logout revokes successor sessions; require a
+  browser-bound POST logout instead of GET.
+* Protect CLI credential storage, directory archive boundaries and credentials
+  on redirects. Keep browser decrypted downloads/key backups inside the local
+  trust boundary.
+
+Upgrade notes: existing sessions are revoked by the previously merged SQLite 21 /
+Redis 13 upgrades. Existing OIDC accounts require explicit verified identity
+binding, non-loopback OIDC requires HTTPS, and the provider must support S256
+PKCE and nonce. Pending OIDC transactions are process-local; callbacks must reach
+the same process. Stop old instances, back up configuration/database, and never
+run an old binary against the upgraded session store. See
+`2.18.0 upgrade notes <https://github.com/Activer007/SupaShare/blob/master/docs/releases/2.18.0.md>`__
+for the PR index and linked migration runbooks. This version-only update adds no
+new database migration and does not rotate API keys or publish artifacts.
+
 v2.16.6 (2026-11-02; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
