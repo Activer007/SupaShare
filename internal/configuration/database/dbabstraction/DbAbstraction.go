@@ -132,6 +132,8 @@ type Database interface {
 	GetUserByName(email string) (models.User, bool)
 	// SaveUser saves a user to the database. If isNewUser is true, a new Id will be generated
 	SaveUser(user models.User, isNewUser bool)
+	// UpdateUserResetCredentials conditionally updates only credential-reset fields.
+	UpdateUserResetCredentials(expected models.User, password string, reset bool) (bool, error)
 	// UpdateUserLastOnline writes the last online time to the database
 	UpdateUserLastOnline(id int)
 	// DeleteUser deletes a user with the given ID

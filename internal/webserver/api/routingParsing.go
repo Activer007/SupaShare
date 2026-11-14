@@ -794,6 +794,29 @@ func (p *paramUserDelete) ParseRequest(r *http.Request) error {
 		}
 	}
 
+	// RequestParser header value "transferToSelf", required: false
+	exists, err = checkHeaderExists(r, "transferToSelf", false, false)
+	if err != nil {
+		return err
+	}
+	p.foundHeaders["transferToSelf"] = exists
+	if exists {
+		p.TransferToSelf, err = parseHeaderBool(r, "transferToSelf")
+		if err != nil {
+			return fmt.Errorf("invalid value in header transferToSelf supplied")
+		}
+	}
+
+	// RequestParser header value "fileOperationKey", required: false
+	exists, err = checkHeaderExists(r, "fileOperationKey", false, true)
+	if err != nil {
+		return err
+	}
+	p.foundHeaders["fileOperationKey"] = exists
+	if exists {
+		p.FileOperationKey = r.Header.Get("fileOperationKey")
+	}
+
 	return p.ProcessParameter(r)
 }
 

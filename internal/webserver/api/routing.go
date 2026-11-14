@@ -618,10 +618,12 @@ func (p *paramUserChangeRank) ProcessParameter(_ *http.Request) error {
 }
 
 type paramUserDelete struct {
-	Request      *http.Request
-	Id           int  `header:"userid" required:"true"`
-	DeleteFiles  bool `header:"deleteFiles"`
-	foundHeaders map[string]bool
+	Request          *http.Request
+	Id               int    `header:"userid" required:"true"`
+	DeleteFiles      bool   `header:"deleteFiles"`
+	TransferToSelf   bool   `header:"transferToSelf"`
+	FileOperationKey string `header:"fileOperationKey"`
+	foundHeaders     map[string]bool
 }
 
 func (p *paramUserDelete) ProcessParameter(r *http.Request) error {

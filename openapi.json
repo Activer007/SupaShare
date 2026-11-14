@@ -2141,7 +2141,7 @@
           "user"
         ],
         "summary": "Deletes the selected user",
-        "description": "This API call deletes the given user. If files are associated with the user, they will be linked with the user that initiated the deletion. If deleteFiles is \"true\", the files will be deleted instead.  Requires API permission MANAGE_USERS",
+        "description": "Deletes the selected manageable user only after account and content authorization checks. Requires MANAGE_USERS. With deleteFiles=true, also requires DELETE and permission to delete other users’ uploads. Otherwise requires transferToSelf=true, administrator rank, EDIT and permission to edit other users’ uploads; all files and File Requests transfer to the authenticated caller. The required file-operation API permission can be on the primary key or a separate same-user fileOperationKey. No implicit transfer is performed.",
         "operationId": "userdelete",
         "security": [
           {
@@ -2165,12 +2165,34 @@
           {
             "name": "deleteFiles",
             "in": "header",
-            "description": "Delete all associated uploads from this user",
+            "description": "Delete all associated files and File Requests instead of transferring them.",
             "required": false,
             "style": "simple",
             "explode": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "transferToSelf",
+            "in": "header",
+            "description": "Required to be true when deleteFiles is false; explicitly confirms transfer of files and File Requests to the authenticated caller.",
+            "required": false,
+            "style": "simple",
+            "explode": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "fileOperationKey",
+            "in": "header",
+            "description": "Optional same-user API credential carrying DELETE or EDIT for the selected disposition when the primary key does not carry that permission. Browser clients use a narrowly scoped token. Treat as a secret; do not log.",
+            "required": false,
+            "style": "simple",
+            "explode": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2183,6 +2205,9 @@
           },
           "401": {
             "description": "Invalid API key provided for authentication or API key does not have the required permission"
+          },
+          "403": {
+            "description": "Target user or content disposition is not authorized; no deletion or transfer is started."
           }
         }
       }

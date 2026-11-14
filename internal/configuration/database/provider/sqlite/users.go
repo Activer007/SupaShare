@@ -114,3 +114,20 @@ func (p DatabaseProvider) DeleteUser(id int) {
 	helper.Check(err)
 	helper.Check(tx.Commit())
 }
+
+// UpdateUserResetCredentials never replaces a user row or restores stale profile
+// fields. Matching authorization and credential state makes stale resets fail.
+func (p DatabaseProvider) UpdateUserResetCredentials(expected models.User, password string, reset bool) (bool, error) {
+	if expected.Id <= 0 {
+		return false, nil
+	}
+	result, err := p.sqliteDb.Exec(`UPDATE Users SET Password = ?, ResetPassword = ?
+		WHERE Id = ? AND COALESCE(Password, '') = ? AND ResetPassword = ?
+		AND Userlevel = ? AND Permissions = ?`,
+		password, reset, expected.Id, expected.Password, expected.ResetPassword, expected.UserLevel, expected.Permissions)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}

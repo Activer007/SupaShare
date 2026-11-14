@@ -604,6 +604,13 @@ func SaveUser(user models.User, isNewUser bool) {
 	db.SaveUser(user, isNewUser)
 }
 
+// UpdateUserResetCredentials changes only credentials if the target's authorization
+// and credential snapshot still matches. A false result is a stale/missing target,
+// not a successful reset. It does not coordinate in-flight login/session issuance.
+func UpdateUserResetCredentials(expected models.User, password string, reset bool) (bool, error) {
+	return db.UpdateUserResetCredentials(expected, password, reset)
+}
+
 // UpdateUserLastOnline writes the last online time to the database
 func UpdateUserLastOnline(id int) {
 	// To reduce database writes, the entry is only updated if the last timestamp is more than 30 seconds old

@@ -288,6 +288,7 @@
   "users.delete": "删除用户",
   "users.deleteBefore": "确定删除用户",
   "users.deleteAfter": "吗？此操作无法撤销。",
+  "users.deleteDisposition": "不勾选时，将全部文件与文件请求转移到你的账户（需要管理员身份及编辑他人文件权限）；勾选时，将删除全部文件与文件请求（需要删除他人文件权限）。",
   "users.deleteFiles": "永久删除此用户上传的全部文件。",
   "users.create": "创建用户",
   "users.enterName": "请输入用户名",

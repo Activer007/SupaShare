@@ -658,9 +658,11 @@ async function apiUserDelete(id, deleteFiles) {
     const reqPerm = 'PERM_MANAGE_USERS';
 
     let token;
+    let fileOperationKey;
 
     try {
         token = await getToken(reqPerm, false);
+        fileOperationKey = await getToken(deleteFiles ? 'PERM_DELETE' : 'PERM_EDIT', false);
     } catch (error) {
         console.error("Unable to gain permission token:", error);
         throw error;
@@ -672,7 +674,9 @@ async function apiUserDelete(id, deleteFiles) {
             'Content-Type': 'application/json',
             'apikey': token,
             'userid': id,
-            'deleteFiles': deleteFiles
+            'deleteFiles': deleteFiles,
+            'transferToSelf': !deleteFiles,
+            'fileOperationKey': fileOperationKey
         },
     };
 

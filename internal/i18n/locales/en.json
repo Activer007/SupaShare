@@ -288,6 +288,7 @@
   "users.delete": "Delete User",
   "users.deleteBefore": "Are you sure you want to delete user",
   "users.deleteAfter": "? This action cannot be undone.",
+  "users.deleteDisposition": "If unchecked, all files and File Requests transfer to your account (administrator and cross-owner edit permission required). If checked, all files and File Requests are deleted (cross-owner delete permission required).",
   "users.deleteFiles": "Permanently delete all files uploaded by this user.",
   "users.create": "Create New User",
   "users.enterName": "Enter a username",

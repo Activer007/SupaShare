@@ -427,10 +427,10 @@ func TestUserChangeRank(t *testing.T) {
 		Value: "USER",
 	}})
 	Process(w, r)
-	test.IsEqualInt(t, w.Code, 200)
+	test.IsEqualInt(t, w.Code, 403)
 	user, ok = database.GetUser(idAdmin)
 	test.IsEqualBool(t, ok, true)
-	test.IsEqual(t, user.UserLevel, models.UserLevelUser)
+	test.IsEqual(t, user.UserLevel, models.UserLevelAdmin)
 	w, r = getRecorder(apiUrl, apiKey.Id, []test.Header{{
 		Name:  headerUserId,
 		Value: strconv.Itoa(idAdmin),
@@ -439,12 +439,13 @@ func TestUserChangeRank(t *testing.T) {
 		Value: "ADMIN",
 	}})
 	Process(w, r)
-	test.IsEqualInt(t, w.Code, 400)
+	test.IsEqualInt(t, w.Code, 403)
 	user, ok = database.GetUser(idAdmin)
 	test.IsEqualBool(t, ok, true)
-	test.IsEqual(t, user.UserLevel, models.UserLevelUser)
+	test.IsEqual(t, user.UserLevel, models.UserLevelAdmin)
 	user, _ = database.GetUser(idUser)
 	user.UserLevel = models.UserLevelAdmin
+	user.Permissions = models.UserPermissionAll
 	database.SaveUser(user, false)
 
 	w, r = getRecorder(apiUrl, apiKey.Id, []test.Header{{
@@ -472,6 +473,12 @@ func TestUserDelete(t *testing.T) {
 	const apiUrl = "/user/delete"
 	apiKey := testAuthorisation(t, apiUrl, models.ApiPermManageUsers)
 	testInvalidUserId(t, apiUrl, apiKey.Id, []test.Header{})
+	actor, _ := database.GetUser(idUser)
+	actor.UserLevel = models.UserLevelAdmin
+	actor.Permissions = models.UserPermissionAll
+	database.SaveUser(actor, false)
+	apiKey.GrantPermission(models.ApiPermDelete | models.ApiPermEdit)
+	database.SaveApiKey(apiKey)
 	testDeleteUserCall(t, apiKey.Id, deleteUserCallModeDeleteFiles)
 	testDeleteUserCall(t, apiKey.Id, deleteUserCallModeKeepFiles)
 	testDeleteUserCall(t, apiKey.Id, deleteUserCallModeInvalidOperator)
@@ -538,6 +545,9 @@ func testDeleteUserCall(t *testing.T, apiKey string, mode int) {
 	w, r := getRecorder(apiUrl, apiKey, []test.Header{{
 		Name:  headerUserId,
 		Value: strconv.Itoa(retrievedUser.Id),
+	}, {
+		Name:  "transferToSelf",
+		Value: "true",
 	}, {
 		Name:  headerDeleteFiles,
 		Value: deleteMetaFile,
@@ -623,6 +633,7 @@ func TestUserPasswordReset(t *testing.T) {
 
 	apiKey := testAuthorisation(t, apiUrl, models.ApiPermManageUsers)
 	testInvalidUserId(t, apiUrl, apiKey.Id, []test.Header{})
+	apiKey = onboardingAdminKey(t)
 	user, ok := database.GetUser(idAdmin)
 	test.IsEqualBool(t, ok, true)
 	test.IsEqualBool(t, user.ResetPassword, false)

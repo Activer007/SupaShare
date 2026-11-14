@@ -15,7 +15,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/configuration/database/dbabstraction"
 	"github.com/Activer007/SupaShare/internal/configuration/database/dbcache"
@@ -24,6 +23,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/sessionmanager"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/tokengeneration"
+	"github.com/alicebob/miniredis/v2"
 )
 
 // Usage telemetry is not an authority to create records or restore old fields.
@@ -150,7 +150,7 @@ func TestSEC021RevocationAPI(t *testing.T) {
 					headers = map[string]string{"userid": strconv.Itoa(u.Id), "userpermission": "PERM_LOGS", "permissionModifier": "revoke"}
 				case "delete-user":
 					path = "/user/delete"
-					headers = map[string]string{"userid": strconv.Itoa(u.Id), "deleteFiles": "false"}
+					headers = map[string]string{"userid": strconv.Itoa(u.Id), "deleteFiles": "false", "transferToSelf": "true"}
 				case "delete-key":
 					path = "/auth/delete"
 					headers = map[string]string{"targetKey": key.Id}

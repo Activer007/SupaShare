@@ -30,7 +30,7 @@ func TestSEC040DeleteUserKeepsFailedCleanupAnchor(t *testing.T) {
 	}
 	t.Cleanup(func() { database.DeleteUser(owner.Id) })
 	key := generateNewKey(false, actor.Id, "synthetic deletion contract", "")
-	key.GrantPermission(models.ApiPermManageUsers)
+	key.GrantPermission(models.ApiPermManageUsers | models.ApiPermDelete)
 	database.SaveApiKey(key)
 	t.Cleanup(func() { database.DeleteApiKey(key.Id) })
 	if authenticated, _, ok := isValidApiKey(key.Id, true, models.ApiPermManageUsers); !ok || authenticated.Id != actor.Id {
