@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Activer007/SupaShare/internal/webserver/authentication"
 	"golang.org/x/oauth2"
 )
 
@@ -27,8 +26,7 @@ func TestSEC014CanceledCallbackDoesNotExchange(t *testing.T) {
 	config = oauth2.Config{ClientID: "synthetic", Endpoint: oauth2.Endpoint{TokenURL: idp.URL, AuthStyle: oauth2.AuthStyleInParams}}
 	requestContext, cancel := context.WithCancel(context.Background())
 	cancel()
-	r := httptest.NewRequest("GET", "/oauth-callback?state=synthetic-state&code=synthetic-code", nil).WithContext(requestContext)
-	r.AddCookie(&http.Cookie{Name: authentication.CookieOauth, Value: "synthetic-state"})
+	r := newRequest("/oauth-callback?state=synthetic-state&code=synthetic-code", "synthetic-state").WithContext(requestContext)
 	HandlerCallback(httptest.NewRecorder(), r)
 	if requests.Load() != 0 {
 		t.Fatal("canceled callback contacted token endpoint")
@@ -85,8 +83,7 @@ func TestSEC014CallbackDeadlineReachesProvider(t *testing.T) {
 			config.Endpoint.AuthStyle = oauth2.AuthStyleInParams
 			requestContext, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 			defer cancel()
-			r := httptest.NewRequest("GET", "/oauth-callback?state=synthetic-state&code=synthetic-code", nil).WithContext(requestContext)
-			r.AddCookie(&http.Cookie{Name: authentication.CookieOauth, Value: "synthetic-state"})
+			r := newRequest("/oauth-callback?state=synthetic-state&code=synthetic-code", "synthetic-state").WithContext(requestContext)
 			w := httptest.NewRecorder()
 			done := make(chan struct{})
 			go func() { HandlerCallback(w, r); close(done) }()

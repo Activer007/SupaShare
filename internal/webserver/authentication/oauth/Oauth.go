@@ -2,12 +2,12 @@ package oauth
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 	"net/http"
-	"time"
+	"net/url"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
-	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication"
 	"github.com/Activer007/SupaShare/internal/webserver/errorHandling"
@@ -53,6 +53,7 @@ const (
 
 // HandlerLogin is a handler for showing the login screen
 func HandlerLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	// If user clicked logout, force account selection
 	if r.URL.Query().Has("consent") {
 		initLogin(w, r, promptConsent)
@@ -62,8 +63,16 @@ func HandlerLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func initLogin(w http.ResponseWriter, r *http.Request, screenType int) {
-	state := helper.GenerateRandomString(32)
-	setCallbackCookie(w, state)
+	if !safeCallbackTransport() {
+		http.Error(w, "OIDC requires an HTTPS public URL (HTTP is only allowed on loopback for development)", http.StatusServiceUnavailable)
+		return
+	}
+	state, tx, ok := transactions.create()
+	if !ok {
+		http.Error(w, "Too many pending login attempts; retry later", http.StatusServiceUnavailable)
+		return
+	}
+	setCallbackCookie(w, tx.binding)
 	var prompt string
 	switch screenType {
 	case promptSilent:
@@ -75,7 +84,7 @@ func initLogin(w http.ResponseWriter, r *http.Request, screenType int) {
 	default:
 		panic("invalid screen type")
 	}
-	http.Redirect(w, r, config.AuthCodeURL(state)+"&prompt="+prompt, http.StatusFound)
+	http.Redirect(w, r, config.AuthCodeURL(state, oauth2.S256ChallengeOption(tx.verifier), oidc.Nonce(tx.nonce), oauth2.SetAuthURLParam("prompt", prompt)), http.StatusFound)
 }
 
 func isConsentRequired(r *http.Request) bool {
@@ -89,13 +98,31 @@ func isLoginRequired(r *http.Request) bool {
 
 // HandlerCallback is a handler for processing the oauth callback
 func HandlerCallback(w http.ResponseWriter, r *http.Request) {
-	state, err := r.Cookie(authentication.CookieOauth)
-	if err != nil {
-		errorHandling.RedirectToOAuthErrorPage(w, r, "Parameter state was not provided", err)
+	w.Header().Set("Cache-Control", "no-store")
+	if !safeCallbackTransport() {
+		http.Error(w, "OIDC requires an HTTPS public URL", http.StatusServiceUnavailable)
 		return
 	}
-	if r.URL.Query().Get("state") != state.Value {
-		errorHandling.RedirectToOAuthErrorPage(w, r, "Parameter state did not match", err)
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	binding, validCookie := callbackBinding(r)
+	states := query["state"]
+	if err != nil || !validCookie || len(states) != 1 || len(states[0]) != 32 {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Invalid login transaction", nil)
+		return
+	}
+	tx, valid := transactions.consume(states[0], binding)
+	// Clear a matched attempt even when expired or when later processing fails.
+	// An unrelated/stale tab must not erase a newer browser login binding.
+	if tx.binding != "" {
+		setCallbackCookie(w, "")
+	}
+	if !valid {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Expired or invalid login transaction", nil)
 		return
 	}
 
@@ -108,7 +135,11 @@ func HandlerCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauth2Token, err := config.Exchange(r.Context(), r.URL.Query().Get("code"))
+	if query.Get("error") != "" || len(query["code"]) != 1 || query.Get("code") == "" {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Authorization was not completed", nil)
+		return
+	}
+	oauth2Token, err := config.Exchange(r.Context(), query.Get("code"), oauth2.VerifierOption(tx.verifier))
 	if err != nil {
 		if r.Context().Err() != nil {
 			return
@@ -127,6 +158,11 @@ func HandlerCallback(w http.ResponseWriter, r *http.Request) {
 	idToken, err := provider.Verifier(&oidc.Config{ClientID: config.ClientID}).Verify(r.Context(), rawIDToken)
 	if err != nil || idToken.Subject == "" {
 		errorHandling.RedirectToOAuthErrorPage(w, r, "Invalid ID token", nil)
+		return
+	}
+
+	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(tx.nonce)) != 1 {
+		errorHandling.RedirectToOAuthErrorPage(w, r, "Invalid ID token nonce", nil)
 		return
 	}
 
@@ -162,16 +198,4 @@ func HandlerCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errorHandling.RedirectToOAuthErrorPage(w, r, "Failed to continue with login: ", err)
 	}
-}
-
-func setCallbackCookie(w http.ResponseWriter, value string) {
-	c := &http.Cookie{
-		Name:     authentication.CookieOauth,
-		Value:    value,
-		MaxAge:   int(time.Hour.Seconds()),
-		HttpOnly: true,
-		Secure:   configuration.UsesHTTPS(),
-		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, c)
 }

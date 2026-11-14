@@ -25,9 +25,6 @@ import (
 
 type userNameContext string
 
-// CookieOauth is the cookie name used for login
-const CookieOauth = "state"
-
 const userNameContextKey userNameContext = "userName"
 
 // Valid Argon2id encoding used only for missing accounts. Verification uses the

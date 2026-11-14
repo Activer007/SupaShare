@@ -9,9 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/Activer007/SupaShare/internal/helper"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"sync"
 	"testing"
 	"time"
 )
@@ -36,7 +39,22 @@ func NewIDP(t *testing.T, identity Identity) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(value)
 	}
+	type grant struct{ nonce, challenge string }
+	var mu sync.Mutex
+	grants := make(map[string]grant)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		code := helper.GenerateRandomString(32)
+		mu.Lock()
+		grants[code] = grant{r.URL.Query().Get("nonce"), r.URL.Query().Get("code_challenge")}
+		mu.Unlock()
+		target, _ := url.Parse(r.URL.Query().Get("redirect_uri"))
+		q := target.Query()
+		q.Set("code", code)
+		q.Set("state", r.URL.Query().Get("state"))
+		target.RawQuery = q.Encode()
+		http.Redirect(w, r, target.String(), http.StatusFound)
+	})
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"issuer": server.URL, "authorization_endpoint": server.URL + "/auth", "token_endpoint": server.URL + "/token", "userinfo_endpoint": server.URL + "/userinfo", "jwks_uri": server.URL + "/jwks", "id_token_signing_alg_values_supported": []string{"RS256"}})
 	})
@@ -55,12 +73,23 @@ func NewIDP(t *testing.T, identity Identity) *httptest.Server {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if err := r.ParseForm(); err != nil || r.Form.Get("code") != "synthetic-code" {
+		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid code", http.StatusBadRequest)
 			return
 		}
+		mu.Lock()
+		g, ok := grants[r.Form.Get("code")]
+		delete(grants, r.Form.Get("code"))
+		mu.Unlock()
+		if r.Form.Get("code") != "synthetic-code" {
+			hash := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
+			if !ok || g.challenge != base64.RawURLEncoding.EncodeToString(hash[:]) {
+				http.Error(w, "invalid grant", 400)
+				return
+			}
+		}
 		header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"fixture"}`))
-		body, _ := json.Marshal(map[string]any{"iss": server.URL, "sub": identity.Subject, "aud": "fixture-client", "email": identity.Email, "email_verified": identity.EmailVerified, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix()})
+		body, _ := json.Marshal(map[string]any{"nonce": g.nonce, "iss": server.URL, "sub": identity.Subject, "aud": "fixture-client", "email": identity.Email, "email_verified": identity.EmailVerified, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix()})
 		unsigned := header + "." + base64.RawURLEncoding.EncodeToString(body)
 		digest := sha256.Sum256([]byte(unsigned))
 		signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])

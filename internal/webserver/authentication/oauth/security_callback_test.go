@@ -88,7 +88,9 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 			}
 			// Go 1.26 treats loopback HTTP as a secure cookie origin. Use a
 			// non-loopback hostname, but route every connection to this fixture.
-			publicURL.Host = net.JoinHostPort("example.com", publicURL.Port())
+			if secure {
+				publicURL.Host = net.JoinHostPort("example.com", publicURL.Port())
+			}
 			publicBase := publicURL.String()
 			configuration.Get().ServerUrl = publicBase + "/"
 			Init(publicBase+"/", auth)
@@ -146,7 +148,7 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 				t.Fatal("missing login state")
 			}
 			for _, cookie := range login.Cookies() {
-				if cookie.Name == authentication.CookieOauth && (cookie.Secure != secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode) {
+				if cookie.Name == callbackCookieName() && (cookie.Secure != secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode) {
 					t.Fatal("callback cookie attributes changed")
 				}
 			}
@@ -154,7 +156,19 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 			if wrong.Header.Get("Location") == "/admin" || get("/probe").StatusCode != 401 {
 				t.Fatal("wrong state authenticated")
 			}
-			callback := get("/oauth-callback?state=" + url.QueryEscape(state) + "&code=synthetic-code")
+			// A rejected callback clears correlation, so start a new attempt.
+			login = get("/login")
+			idpClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			authorized, err := idpClient.Get(login.Header.Get("Location"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			authorized.Body.Close()
+			callbackURL, err := url.Parse(authorized.Header.Get("Location"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			callback := get(callbackURL.RequestURI())
 			if callback.StatusCode != http.StatusTemporaryRedirect || callback.Header.Get("Location") != "/admin" {
 				location, _ := url.Parse(callback.Header.Get("Location"))
 				t.Fatalf("valid callback did not authenticate: status=%d path=%s", callback.StatusCode, location.Path)

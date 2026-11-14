@@ -142,6 +142,7 @@ func (m *mockOIDCServer) buildIDToken() string {
 		"aud":   []string{"test-client"},
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),
+		"nonce": "fixture-nonce",
 	}
 	for name, value := range m.tokenClaims {
 		claims[name] = value
@@ -222,10 +223,23 @@ func initWithMock(m *mockOIDCServer) {
 }
 
 // newRequest builds a test request, optionally attaching the OAuth state cookie.
-func newRequest(url, stateValue string) *http.Request {
-	req := httptest.NewRequest("GET", url, nil)
+func newRequest(rawURL, stateValue string) *http.Request {
+	req := httptest.NewRequest("GET", rawURL, nil)
 	if stateValue != "" {
-		req.AddCookie(&http.Cookie{Name: authentication.CookieOauth, Value: stateValue})
+		state, tx, ok := transactions.create()
+		if !ok {
+			panic("fixture transaction capacity")
+		}
+		tx.nonce = "fixture-nonce"
+		transactions.Lock()
+		transactions.entries[state] = tx
+		transactions.Unlock()
+		q := req.URL.Query()
+		if q.Get("state") == stateValue {
+			q.Set("state", state)
+		}
+		req.URL.RawQuery = q.Encode()
+		req.AddCookie(&http.Cookie{Name: callbackCookieName(), Value: tx.binding})
 	}
 	return req
 }
@@ -237,7 +251,7 @@ func TestSetCallbackCookie(t *testing.T) {
 	setCallbackCookie(w, "test-value")
 	cookies := w.Result().Cookies()
 	test.IsEqualInt(t, len(cookies), 1)
-	test.IsEqualString(t, cookies[0].Name, authentication.CookieOauth)
+	test.IsEqualString(t, cookies[0].Name, callbackCookieName())
 	test.IsEqualString(t, cookies[0].Value, "test-value")
 }
 
