@@ -39,6 +39,7 @@ func TestSessionLineageLogout(t *testing.T) {
 				t.Fatal(err)
 			}
 			db = store
+			store.SaveUser(models.User{Id: 91, Name: "session-owner"}, false)
 			session := models.Session{UserId: 91, RenewAt: time.Now().Add(-time.Minute).Unix(), ValidUntil: time.Now().Add(time.Hour).Unix()}
 			SaveSession("victim", session)
 			shorter := session

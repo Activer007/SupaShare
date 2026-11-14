@@ -1057,6 +1057,7 @@ func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, key
 		return
 	}
 	userEdit, ok := isValidUserForEditing(w, request.Id)
+	expectedUser := userEdit
 	if !ok {
 		return
 	}
@@ -1080,13 +1081,19 @@ func apiModifyUser(w http.ResponseWriter, r requestParser, user models.User, key
 	if request.GrantPermission {
 		if !userEdit.HasPermission(request.Permission) {
 			userEdit.GrantPermission(request.Permission)
-			database.SaveUser(userEdit, false)
+			if changed, err := database.UpdateUserProfile(expectedUser, userEdit); err != nil || !changed {
+				sendError(w, http.StatusConflict, errorcodes.ResourceCanNotBeEdited, "User changed concurrently; reload and retry")
+				return
+			}
 		}
 		return
 	}
 	if userEdit.HasPermission(request.Permission) {
 		userEdit.RemovePermission(request.Permission)
-		database.SaveUser(userEdit, false)
+		if changed, err := database.UpdateUserProfile(expectedUser, userEdit); err != nil || !changed {
+			sendError(w, http.StatusConflict, errorcodes.ResourceCanNotBeEdited, "User changed concurrently; reload and retry")
+			return
+		}
 		updateApiKeyPermsOnUserPermChange(userEdit.Id, request.Permission)
 	}
 }
@@ -1105,6 +1112,7 @@ func apiChangeUserRank(w http.ResponseWriter, r requestParser, user models.User,
 		return
 	}
 	userEdit, ok := isValidUserForEditing(w, request.Id)
+	expectedUser := userEdit
 	if !ok {
 		return
 	}
@@ -1135,16 +1143,21 @@ func apiChangeUserRank(w http.ResponseWriter, r requestParser, user models.User,
 		userEdit.Permissions = models.UserPermissionAll
 	case models.UserLevelUser:
 		userEdit.Permissions = models.UserPermissionNone
-		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermReplaceUploads)
-		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermManageUsers)
-		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermManageLogs)
-		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermGuestUploads)
 	default:
 		sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, "invalid rank sent")
 		return
 	}
 	logging.LogUserEdit(userEdit, user)
-	database.SaveUser(userEdit, false)
+	if changed, err := database.UpdateUserProfile(expectedUser, userEdit); err != nil || !changed {
+		sendError(w, http.StatusConflict, errorcodes.ResourceCanNotBeEdited, "User changed concurrently; reload and retry")
+		return
+	}
+	if request.NewRank == models.UserLevelUser {
+		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermReplaceUploads)
+		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermManageUsers)
+		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermManageLogs)
+		updateApiKeyPermsOnUserPermChange(userEdit.Id, models.UserPermGuestUploads)
+	}
 }
 
 func updateApiKeyPermsOnUserPermChange(userId int, userPerm models.UserPermission) {

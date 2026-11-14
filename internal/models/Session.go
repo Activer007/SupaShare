@@ -2,6 +2,7 @@ package models
 
 // Session contains cookie parameter
 type Session struct {
+	AuthGeneration int64 `redis:"auth_generation"`
 	// Successor marks a revoked predecessor retained only for logout lineage.
 	Successor  string `redis:"successor"`
 	RenewAt    int64  `redis:"renew_at"`

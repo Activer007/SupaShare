@@ -75,7 +75,7 @@ func TestUserKeyCreationFailures(t *testing.T) {
 
 func TestUserKeyAPIQuotaAndRecovery(t *testing.T) {
 	for _, level := range []models.UserRank{models.UserLevelUser, models.UserLevelAdmin} {
-		owner := models.User{Id: 887701 + int(level), Name: "quota@example.invalid", UserLevel: level}
+		owner := models.User{Id: 887701 + int(level), Name: fmt.Sprintf("quota-%d@example.invalid", level), UserLevel: level}
 		database.SaveUser(owner, false)
 		var ids []string
 		t.Cleanup(func() {

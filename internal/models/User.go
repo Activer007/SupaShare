@@ -11,13 +11,14 @@ type UserPermission uint16
 
 // User contains information about the SupaShare user
 type User struct {
-	Id            int            `json:"id" redis:"id"`
-	Name          string         `json:"name" redis:"Name"`
-	Permissions   UserPermission `json:"permissions" redis:"Permissions"`
-	UserLevel     UserRank       `json:"userLevel" redis:"UserLevel"`
-	LastOnline    int64          `json:"lastOnline" redis:"LastOnline"`
-	Password      string         `json:"-" redis:"Password"`
-	ResetPassword bool           `json:"resetPassword" redis:"ResetPassword"`
+	AuthGeneration int64          `json:"-" redis:"AuthGeneration"`
+	Id             int            `json:"id" redis:"id"`
+	Name           string         `json:"name" redis:"Name"`
+	Permissions    UserPermission `json:"permissions" redis:"Permissions"`
+	UserLevel      UserRank       `json:"userLevel" redis:"UserLevel"`
+	LastOnline     int64          `json:"lastOnline" redis:"LastOnline"`
+	Password       string         `json:"-" redis:"Password"`
+	ResetPassword  bool           `json:"resetPassword" redis:"ResetPassword"`
 }
 
 // GetReadableUserLevel returns the userlevel as a group name

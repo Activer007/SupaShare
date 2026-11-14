@@ -419,9 +419,12 @@ func changePassword(w http.ResponseWriter, r *http.Request) {
 			errMessage = err.Error()
 		}
 		if ok {
-			user.Password = pwHash
-			user.ResetPassword = false
-			database.SaveUser(user, false)
+			updated, updateErr := database.UpdateUserResetCredentials(user, pwHash, false)
+			if updateErr != nil || !updated {
+				sessionmanager.LogoutSession(w, r)
+				redirect(w, r, "login")
+				return
+			}
 			database.DeleteAllSessionsByUser(user.Id)
 			sessionmanager.LogoutSession(w, r)
 			redirect(w, r, "login")
@@ -596,9 +599,8 @@ func showLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		retrievedUser, validCredentials, validCsfr := authentication.IsCorrectUsernameAndPasswordForBrowser(user, pw, csfr, browserCSRFBinding(r))
-		if validCredentials {
+		if validCredentials && sessionmanager.CreateSessionForUser(w, false, 0, retrievedUser) {
 			logging.LogValidLogin(user)
-			sessionmanager.CreateSession(w, false, 0, retrievedUser.Id)
 			redirect(w, r, "admin")
 			return
 		}
