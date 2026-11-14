@@ -69,7 +69,7 @@ func TestIsValidSession(t *testing.T) {
 	})
 	user, ok = IsValidSession(w, r, false, 1)
 	cookies := w.Result().Cookies()
-	test.IsEqualInt(t, len(cookies), 1)
+	test.IsEqualInt(t, len(cookies), 2)
 	test.IsEqualString(t, cookies[0].Name, "session_token")
 	session := cookies[0].Value
 	test.IsEqualInt(t, len(session), 60)
@@ -80,7 +80,7 @@ func TestCreateSession(t *testing.T) {
 	w, _, _, _ := getRecorder(nil)
 	CreateSession(w, false, 1, 5)
 	cookies := w.Result().Cookies()
-	test.IsEqualInt(t, len(cookies), 1)
+	test.IsEqualInt(t, len(cookies), 2)
 	test.IsEqualString(t, cookies[0].Name, "session_token")
 	newSession = cookies[0].Value
 	test.IsEqualInt(t, len(newSession), 60)

@@ -48,6 +48,10 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 			auth := models.AuthenticationConfig{Method: models.AuthenticationOAuth2, OAuthProvider: idp.URL, OAuthClientId: "fixture-client", OAuthClientSecret: "synthetic-secret", OAuthRecheckInterval: 1, OnlyRegisteredUsers: true}
 			configuration.Get().Authentication = auth
 			authentication.Init(auth)
+			sessionCookieName := "session_token"
+			if secure {
+				sessionCookieName = "__Host-session_token"
+			}
 			mux := http.NewServeMux()
 			mux.HandleFunc("/login", HandlerLogin)
 			mux.HandleFunc("/oauth-callback", HandlerCallback)
@@ -55,7 +59,7 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 				if r.TLS != nil {
 					t.Error("backend unexpectedly received TLS")
 				}
-				cookie, err := r.Cookie("session_token")
+				cookie, err := r.Cookie(sessionCookieName)
 				if err != nil {
 					w.WriteHeader(401)
 					return
@@ -180,7 +184,7 @@ func TestSEC012CallbackThroughProxy(t *testing.T) {
 			httpURL.Scheme = "http"
 			sentOverHTTP := false
 			for _, cookie := range client.Jar.Cookies(&httpURL) {
-				if cookie.Name == "session_token" {
+				if cookie.Name == sessionCookieName {
 					sentOverHTTP = true
 				}
 			}

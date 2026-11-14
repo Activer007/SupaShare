@@ -134,6 +134,12 @@ func TestSEC050PagePolicy(t *testing.T) {
 			if tc.name == "login" || tc.name == "download" || tc.name == "error" {
 				wantEnforced = "base-uri 'self'; object-src 'none'"
 			}
+			if tc.name != "download" {
+				if wantEnforced != "" {
+					wantEnforced += "; "
+				}
+				wantEnforced += "frame-ancestors 'none'"
+			}
 			if response.Header().Get("Content-Security-Policy") != wantEnforced {
 				t.Error("staged page CSP missing or applied to another page")
 			}

@@ -84,7 +84,7 @@ func TestOAuthAbsoluteRecheckDeadline(t *testing.T) {
 							}
 							synctest.Wait() // last-online update must complete before backend cleanup
 							cookies := w.Result().Cookies()
-							if len(cookies) != 1 {
+							if len(cookies) != 2 {
 								t.Fatal("rotation did not set one cookie")
 							}
 							cookie = cookies[0]

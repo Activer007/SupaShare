@@ -25,8 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/Activer007/SupaShare/internal/configuration"
 	"github.com/Activer007/SupaShare/internal/configuration/cloudconfig"
 	"github.com/Activer007/SupaShare/internal/configuration/configupgrade"
@@ -40,6 +38,8 @@ import (
 	"github.com/Activer007/SupaShare/internal/storage/filesystem/s3filesystem/aws"
 	"github.com/Activer007/SupaShare/internal/webserver/browseraccess"
 	"github.com/Activer007/SupaShare/internal/webserver/ratelimiter"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // webserverDir is the embedded version of the "static" folder
@@ -871,6 +871,8 @@ func handleShowSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	w.Header().Set("X-Frame-Options", "DENY")
 	err = templateFolder.ExecuteTemplate(w, "setup", view)
 	helper.Check(err)
 }

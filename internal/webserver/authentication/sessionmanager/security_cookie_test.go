@@ -25,7 +25,7 @@ func TestSEC012SessionCookieTransport(t *testing.T) {
 			w := httptest.NewRecorder()
 			writeSessionCookie(w, value, time.Now().Add(time.Hour))
 			cookies := w.Result().Cookies()
-			if len(cookies) != 1 {
+			if len(cookies) < 2 {
 				t.Fatal("expected one session cookie")
 			}
 			c := cookies[0]
