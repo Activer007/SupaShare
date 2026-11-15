@@ -871,7 +871,8 @@ async function apiLogsDelete(timestamp) {
 // E2E
 
 
-async function apiE2eGet() {
+async function apiE2eGet(lease) {
+    if (!lease) throw new Error("Missing E2E lease; retry the operation");
     const apiUrl = './api/e2e/get';
     const reqPerm = 'PERM_UPLOAD';
 
@@ -888,7 +889,8 @@ async function apiE2eGet() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'apikey': token
+            'apikey': token,
+            'e2eLease': lease || ''
         },
     };
 
@@ -905,7 +907,8 @@ async function apiE2eGet() {
 }
 
 
-async function apiE2eMutexLockUnlock(doUnlock) {
+async function apiE2eMutexLockUnlock(doUnlock, lease, signal) {
+    if (doUnlock && !lease) throw new Error("Missing E2E lease");
     let apiUrl = './api/e2e/mutex/lock';
     if (doUnlock) {
     	apiUrl = './api/e2e/mutex/unlock';
@@ -915,7 +918,7 @@ async function apiE2eMutexLockUnlock(doUnlock) {
     let token;
 
     try {
-        token = await getToken(reqPerm, false);
+        token = await e2eAbortable(getToken(reqPerm, false), signal);
     } catch (error) {
         console.error("Unable to gain permission token:", error);
         throw error;
@@ -923,18 +926,28 @@ async function apiE2eMutexLockUnlock(doUnlock) {
 
     const requestOptions = {
         method: 'GET',
+        signal,
         headers: {
             'Content-Type': 'application/json',
-            'apikey': token
+            'apikey': token,
+            'e2eLease': lease || ''
         },
     };
 
     try {
         const response = await fetch(apiUrl, requestOptions);
         if (!response.ok) {
-            throw await apiFailure(response);
+            const error = await apiFailure(response);
+            if (response.status === 409 || response.status === 429) {
+                error.e2eAdmissionBusy = true;
+                error.message = "E2E metadata is busy; retry the operation. " + error.message;
+            }
+            throw error;
         }
-        return await response.text();
+        if (doUnlock) return;
+        const result = await response.json();
+        if (!result.leaseToken) throw new Error("Server did not provide an E2E lease; reload after upgrading");
+        return result.leaseToken;
     } catch (error) {
         console.error("Error in apiE2eMutexLock:", error);
         throw error;
@@ -943,7 +956,8 @@ async function apiE2eMutexLockUnlock(doUnlock) {
 
 
 
-async function apiE2eStore(content) {
+async function apiE2eStore(content, lease) {
+    if (!lease) throw new Error("Missing E2E lease; retry the operation");
     const apiUrl = './api/e2e/set';
     const reqPerm = 'PERM_UPLOAD';
 
@@ -960,7 +974,8 @@ async function apiE2eStore(content) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'apikey': token
+            'apikey': token,
+            'e2eLease': lease || ''
         },
         body: JSON.stringify({
             'content': content
@@ -978,6 +993,66 @@ async function apiE2eStore(content) {
     }
 }
 
+
+// Keep the lease local to this read/modify/write transaction. Never release
+// after a failed acquisition, and never replay a non-idempotent callback.
+function e2eAbortable(promise, signal) {
+    if (!signal) return promise;
+    if (signal.aborted) {
+        Promise.resolve(promise).catch(() => {});
+        return Promise.reject(signal.reason || new Error("E2E acquisition cancelled"));
+    }
+    return new Promise((resolve, reject) => {
+        const abort = () => reject(signal.reason || new Error("E2E acquisition cancelled"));
+        signal.addEventListener('abort', abort, {once:true});
+        promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    });
+}
+
+async function acquireE2eLease({signal} = {}) {
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal.reason);
+    if (signal) {
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, {once:true});
+    }
+    const timeout = setTimeout(() => controller.abort(new Error("E2E acquisition timed out; retry the operation")), 2000);
+    try {
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                return await apiE2eMutexLockUnlock(false, undefined, controller.signal);
+            } catch (error) {
+                if (controller.signal.aborted || !error.e2eAdmissionBusy || attempt === 3) throw error;
+                await new Promise((resolve, reject) => {
+                    const abortDelay = () => {
+                        clearTimeout(timer);
+                        reject(controller.signal.reason || new Error("E2E acquisition cancelled"));
+                    };
+                    const timer = setTimeout(() => {
+                        controller.signal.removeEventListener('abort', abortDelay);
+                        resolve();
+                    }, (attempt + 1) * 100);
+                    controller.signal.addEventListener('abort', abortDelay, {once:true});
+                    if (controller.signal.aborted) abortDelay();
+                });
+            }
+        }
+    } finally {
+        clearTimeout(timeout);
+        if (signal) signal.removeEventListener('abort', abort);
+    }
+}
+
+async function withE2eLease(operation, {signal} = {}) {
+    const lease = await acquireE2eLease({signal});
+    try {
+        if (signal && signal.aborted) throw signal.reason || new Error("E2E acquisition cancelled");
+        return await operation(lease);
+    } finally {
+        try { await apiE2eMutexLockUnlock(true, lease); }
+        catch (error) { console.error("Failed to release E2E lease; it will expire", error); }
+    }
+}
 
 // Upload Requests
 

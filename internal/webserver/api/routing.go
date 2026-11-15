@@ -281,7 +281,7 @@ var routes = []apiRoute{
 		Url:           "/e2e/get", // not published in API documentation
 		ApiPerm:       models.ApiPermUpload,
 		execution:     apiE2eGet,
-		RequestParser: nil,
+		RequestParser: &paramE2eLease{},
 	},
 	{
 		Url:           "/e2e/set", // not published in API documentation
@@ -293,13 +293,13 @@ var routes = []apiRoute{
 		Url:           "/e2e/mutex/lock", // not published in API documentation
 		ApiPerm:       models.ApiPermUpload,
 		execution:     apiE2eMutexLock,
-		RequestParser: nil,
+		RequestParser: &paramE2eAcquire{},
 	},
 	{
 		Url:           "/e2e/mutex/unlock", // not published in API documentation
 		ApiPerm:       models.ApiPermUpload,
 		execution:     apiE2eMutexUnlock,
-		RequestParser: nil,
+		RequestParser: &paramE2eLease{},
 	},
 }
 
@@ -682,12 +682,36 @@ type paramUserResetPw struct {
 
 func (p *paramUserResetPw) ProcessParameter(_ *http.Request) error { return nil }
 
+type paramE2eAcquire struct{ Request *http.Request }
+
+func (p *paramE2eAcquire) ProcessParameter(r *http.Request) error { p.Request = r; return nil }
+
+type paramE2eLease struct {
+	Request      *http.Request
+	LeaseToken   string `header:"e2eLease" required:"true"`
+	foundHeaders map[string]bool
+}
+
+func (p *paramE2eLease) ProcessParameter(r *http.Request) error {
+	p.Request = r
+	if len(p.LeaseToken) > 128 {
+		return errors.New("invalid E2E lease")
+	}
+	return nil
+}
+
 type paramE2eStore struct {
+	Request       *http.Request
+	LeaseToken    string `header:"e2eLease" required:"true"`
 	EncryptedInfo models.E2EInfoEncrypted
 	foundHeaders  map[string]bool
 }
 
 func (p *paramE2eStore) ProcessParameter(r *http.Request) error {
+	p.Request = r
+	if len(p.LeaseToken) > 128 {
+		return errors.New("invalid E2E lease")
+	}
 	const maxBodySize = 5 * 1024 * 1024 // 5MB in bytes
 	bodyReader := http.MaxBytesReader(nil, r.Body, maxBodySize)
 

@@ -1419,47 +1419,109 @@ func apiLogResetTraffic(w http.ResponseWriter, _ requestParser, _ models.User, _
 	_, _ = w.Write([]byte(`{"Result":"OK"}`))
 }
 
-func apiE2eGet(w http.ResponseWriter, _ requestParser, user models.User, _ models.ApiKey) {
-	if !e2emutex.IsLocked(user.Id) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("{\"result\":\"error\",\"errormessage\":\"mutex was not acquired or has expired\"}"))
-		return
-	}
-	info := database.GetEnd2EndInfo(user.Id)
-	// If e2e is supported for upload requests at some point, this needs to be changed
-	files := getFilesForUser(user, false, true)
-	ids := make([]string, len(files))
-	for i, file := range files {
-		ids[i] = file.Id
-	}
-	info.AvailableFiles = ids
-	bytesE2e, err := json.Marshal(info)
-	helper.Check(err)
-	_, _ = w.Write(bytesE2e)
+// E2E leases are capabilities scoped to the authenticated user, not to a
+// temporary API key that may rotate during an otherwise valid transaction.
+func currentE2eActor(user models.User, key models.ApiKey) bool {
+	current, credential, ok := isValidApiKey(key.Id, false, models.ApiPermUpload)
+	return ok && current.Id == user.Id && !credential.IsUploadRequestKey()
 }
 
-func apiE2eSet(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
-	if !e2emutex.IsLocked(user.Id) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("{\"result\":\"error\",\"errormessage\":\"mutex was not acquired or has expired\"}"))
+func e2eLeaseError(w http.ResponseWriter, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
+	status := http.StatusConflict
+	if errors.Is(err, e2emutex.ErrCapacity) {
+		status = http.StatusTooManyRequests
+	}
+	w.Header().Set("Retry-After", "1")
+	sendError(w, status, errorcodes.ResourceCanNotBeEdited, "E2E lease is unavailable or expired; retry the operation")
+}
+
+func apiE2eGet(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
+	request, ok := r.(*paramE2eLease)
+	if !ok {
+		panic("invalid parameter passed")
+	}
+	var output []byte
+	err := e2emutex.WithLease(request.Request.Context(), user.Id, request.LeaseToken, func() error {
+		if !currentE2eActor(user, key) {
+			return e2emutex.ErrInvalidLease
+		}
+		info := database.GetEnd2EndInfo(user.Id)
+		files := getFilesForUser(user, false, true)
+		ids := make([]string, len(files))
+		for i, file := range files {
+			ids[i] = file.Id
+		}
+		info.AvailableFiles = ids
+		var err error
+		output, err = json.Marshal(info)
+		return err
+	})
+	if err != nil {
+		e2eLeaseError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(output)
+}
+
+func apiE2eSet(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
 	request, ok := r.(*paramE2eStore)
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	database.SaveEnd2EndInfo(request.EncryptedInfo, user.Id)
-	_, _ = w.Write([]byte("{\"result\":\"OK\"}"))
-}
-func apiE2eMutexLock(w http.ResponseWriter, _ requestParser, user models.User, _ models.ApiKey) {
-	e2emutex.Lock(user.Id)
-	_, _ = w.Write([]byte("{\"result\":\"OK\"}"))
+	err := e2emutex.WithLease(request.Request.Context(), user.Id, request.LeaseToken, func() error {
+		if !currentE2eActor(user, key) {
+			return e2emutex.ErrInvalidLease
+		}
+		database.SaveEnd2EndInfo(request.EncryptedInfo, user.Id)
+		return nil
+	})
+	if err != nil {
+		e2eLeaseError(w, err)
+		return
+	}
+	_, _ = w.Write([]byte(`{"result":"OK"}`))
 }
 
-func apiE2eMutexUnlock(w http.ResponseWriter, _ requestParser, user models.User, _ models.ApiKey) {
-	e2emutex.Unlock(user.Id)
-	_, _ = w.Write([]byte("{\"result\":\"OK\"}"))
+func apiE2eMutexLock(w http.ResponseWriter, r requestParser, user models.User, key models.ApiKey) {
+	request, ok := r.(*paramE2eAcquire)
+	if !ok {
+		panic("invalid parameter passed")
+	}
+	if !currentE2eActor(user, key) {
+		sendError(w, http.StatusForbidden, errorcodes.NoPermission, "Upload permission is no longer valid")
+		return
+	}
+	token, err := e2emutex.Acquire(request.Request.Context(), user.Id)
+	if err != nil {
+		e2eLeaseError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(struct {
+		Result     string `json:"result"`
+		LeaseToken string `json:"leaseToken"`
+	}{"OK", token}); err != nil {
+		e2emutex.Release(user.Id, token)
+	}
 }
+
+func apiE2eMutexUnlock(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+	request, ok := r.(*paramE2eLease)
+	if !ok {
+		panic("invalid parameter passed")
+	}
+	if !e2emutex.Release(user.Id, request.LeaseToken) {
+		e2eLeaseError(w, e2emutex.ErrInvalidLease)
+		return
+	}
+	_, _ = w.Write([]byte(`{"result":"OK"}`))
+}
+
 func apiURequestDelete(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
 	request, ok := r.(*paramURequestDelete)
 	if !ok {

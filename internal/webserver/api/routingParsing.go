@@ -914,9 +914,59 @@ func (p *paramUserResetPw) New() requestParser {
 	return &paramUserResetPw{}
 }
 
-// ParseRequest parses the header file. As paramE2eStore has no fields with the
+// ParseRequest parses the header file. As paramE2eAcquire has no fields with the
 // tag header, this method does nothing, except calling ProcessParameter()
+func (p *paramE2eAcquire) ParseRequest(r *http.Request) error {
+	return p.ProcessParameter(r)
+}
+
+// New returns a new instance of paramE2eAcquire struct
+func (p *paramE2eAcquire) New() requestParser {
+	return &paramE2eAcquire{}
+}
+
+// ParseRequest reads r and saves the passed header values in the paramE2eLease struct
+// In the end, ProcessParameter() is called
+func (p *paramE2eLease) ParseRequest(r *http.Request) error {
+	var err error
+	var exists bool
+	p.foundHeaders = make(map[string]bool)
+
+	// RequestParser header value "e2eLease", required: true
+	exists, err = checkHeaderExists(r, "e2eLease", true, true)
+	if err != nil {
+		return err
+	}
+	p.foundHeaders["e2eLease"] = exists
+	if exists {
+		p.LeaseToken = r.Header.Get("e2eLease")
+	}
+
+	return p.ProcessParameter(r)
+}
+
+// New returns a new instance of paramE2eLease struct
+func (p *paramE2eLease) New() requestParser {
+	return &paramE2eLease{}
+}
+
+// ParseRequest reads r and saves the passed header values in the paramE2eStore struct
+// In the end, ProcessParameter() is called
 func (p *paramE2eStore) ParseRequest(r *http.Request) error {
+	var err error
+	var exists bool
+	p.foundHeaders = make(map[string]bool)
+
+	// RequestParser header value "e2eLease", required: true
+	exists, err = checkHeaderExists(r, "e2eLease", true, true)
+	if err != nil {
+		return err
+	}
+	p.foundHeaders["e2eLease"] = exists
+	if exists {
+		p.LeaseToken = r.Header.Get("e2eLease")
+	}
+
 	return p.ProcessParameter(r)
 }
 

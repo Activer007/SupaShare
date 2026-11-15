@@ -51,10 +51,8 @@
 	
 function newKey() {
     window.gokapiTransferBusy = true;
-    localStorage.removeItem("e2ekey");
     let key;
-    apiE2eMutexLockUnlock(false)
-        .then(() => {
+    withE2eLease(async lease => {
             try {
                 key = GokapiE2EGetNewCipher(true);
                 if (key instanceof Error) throw key;
@@ -65,7 +63,7 @@ function newKey() {
                 let data = GokapiE2EInfoEncrypt();
                 if (data instanceof Error) throw data;
 
-                return apiE2eStore(data);
+                return apiE2eStore(data, lease);
             } catch (err) {
                 throw err;
             }
@@ -82,14 +80,8 @@ function newKey() {
             window.gokapiBackupPending = false;
             displayError(err);
         })
-        .finally(async () => {
-            try {
-                await apiE2eMutexLockUnlock(true);
-            } catch (error) {
-                console.error("Failed to release E2E mutex after newKey: " + error);
-            } finally {
-                window.gokapiTransferBusy = false;
-            }
+        .finally(() => {
+            window.gokapiTransferBusy = false;
         });
 }
 
@@ -109,7 +101,6 @@ function newKey() {
 </section>
     <script>
 	function saveKey() {
-	    localStorage.removeItem("e2ekey");
 	    let key = document.getElementById("password").value;
 	    localStorage.setItem("e2ekey", key);
 
