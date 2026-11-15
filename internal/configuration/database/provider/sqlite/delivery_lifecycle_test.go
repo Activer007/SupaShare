@@ -255,7 +255,7 @@ func TestN12SQLiteUpgrade22AddsIndexesPreservesDeliveries(t *testing.T) {
 	if !found || err != nil || got.OwnerID != d.OwnerID || got.ExpiresAt != 0 || got.Title != d.Title {
 		t.Fatalf("legacy data changed %+v %v", got, err)
 	}
-	if p.GetSchemaVersion() != 23 {
+	if p.GetSchemaVersion() != DatabaseSchemeVersion {
 		t.Fatal(p.GetSchemaVersion())
 	}
 }

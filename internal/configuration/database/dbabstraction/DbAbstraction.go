@@ -150,6 +150,12 @@ type Database interface {
 
 	// GetFileRequest returns the FileRequest or false if not found
 	GetFileRequest(id string) (models.FileRequest, bool)
+	CreateFileRequestLimited(context.Context, models.FileRequest, models.ApiKey) (bool, error)
+	UpdateFileRequest(context.Context, models.FileRequest, models.FileRequest) (bool, error)
+	ListFileRequestsPage(context.Context, int, string, int) ([]models.FileRequest, error)
+	ReadFileRequestFiles(context.Context, string) (map[string]models.File, error)
+	PruneFileRequests(context.Context, int64, int) (int, error)
+
 	// GetAllFileRequests returns an array with all file requests, ordered by creation date
 	GetAllFileRequests() []models.FileRequest
 	// SaveFileRequest stores the file request associated with the file in the database

@@ -726,5 +726,11 @@
   "quota.staleAuth": "额度数据已过时。登录已失效或权限不足，请重新登录后重新打开此页。",
   "delivery.errorQuota": "清单数量已达上限（每人100／全站10,000）。过期或撤销的清单保留7天后清理。",
   "delivery.more": "加载更多",
-  "delivery.moreAvailable": "还有更多清单。创建结果不确定时，请加载全部页面后再判断是否重试。"
+  "delivery.moreAvailable": "还有更多清单。创建结果不确定时，请加载全部页面后再判断是否重试。",
+  "request.pages": "收集分页",
+  "request.firstPage": "最新收集",
+  "request.nextPage": "下一页",
+  "request.pageHelp": "数量与刷新仅针对当前页。可通过下一页查看较早的收集。",
+  "request.expiryPolicy": "新收集默认有效 5 天，最长 90 天。已有截止时间在未修改时保持不变。到期后邀请凭证失效，不会自动删除已上传文件；保留的收集仍计入数量限额。",
+  "request.invalidExpiryWindow": "请选择未来 90 天内的截止时间；已有截止时间可保持不变。"
 }

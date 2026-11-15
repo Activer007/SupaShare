@@ -200,7 +200,7 @@ var routes = []apiRoute{
 		Url:           "/uploadrequest/list",
 		ApiPerm:       models.ApiPermManageFileRequests,
 		execution:     apiUploadRequestList,
-		RequestParser: nil,
+		RequestParser: &paramURequestPage{},
 	},
 	{
 		Url:           "/uploadrequest/list/",
@@ -1003,4 +1003,29 @@ func parseHeaderInt(r *http.Request, key string) (int, error) {
 		return 0, err
 	}
 	return value, nil
+}
+
+type paramURequestPage struct {
+	Request *http.Request
+	Before  string
+	Limit   int
+}
+
+func (p *paramURequestPage) ProcessParameter(r *http.Request) error {
+	p.Request = r
+	p.Limit = 50
+	p.Before = r.URL.Query().Get("before")
+	if p.Before != "" {
+		if _, _, e := models.ParseFileRequestCursor(p.Before); e != nil {
+			return e
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, e := strconv.Atoi(v)
+		if e != nil || n < 1 || n > 100 {
+			return errors.New("invalid page size")
+		}
+		p.Limit = n
+	}
+	return nil
 }

@@ -80,7 +80,7 @@ func (p DatabaseProvider) GetMetaDataById(id string) (models.File, bool) {
 func (p DatabaseProvider) SaveMetaData(file models.File) {
 	marshalledFile, err := marshalEncryptionInfo(file)
 	helper.Check(err)
-	args := redigo.Args{}.Add(p.dbPrefix+prefixMetaData+file.Id, p.dbPrefix+keyMetadataRevision, rand.Text(), "save").AddFlat(marshalledFile)
+	args := redigo.Args{}.Add(p.dbPrefix+prefixMetaData+file.Id, p.dbPrefix+keyMetadataRevision, rand.Text(), "save", p.dbPrefix+frIndex+"files:", file.Id, file.UploadRequestId).AddFlat(marshalledFile)
 	conn := p.pool.Get()
 	defer conn.Close()
 	_, err = mutateMetadataWithRevision.Do(conn, args...)
@@ -91,7 +91,7 @@ func (p DatabaseProvider) SaveMetaData(file models.File) {
 func (p DatabaseProvider) DeleteMetaData(id string) {
 	conn := p.pool.Get()
 	defer conn.Close()
-	_, err := mutateMetadataWithRevision.Do(conn, p.dbPrefix+prefixMetaData+id, p.dbPrefix+keyMetadataRevision, rand.Text(), "delete")
+	_, err := mutateMetadataWithRevision.Do(conn, p.dbPrefix+prefixMetaData+id, p.dbPrefix+keyMetadataRevision, rand.Text(), "delete", p.dbPrefix+frIndex+"files:", id, "")
 	helper.Check(err)
 }
 
@@ -109,11 +109,15 @@ if ARGV[2] == 'save' then
         return redis.error_reply('invalid metadata type')
     end
 end
+local old=redis.call('HGET',KEYS[1],'FileRequestId') or ''
+for _,r in ipairs({old,ARGV[5]}) do if r~='' then local t=redis.call('TYPE',ARGV[3]..r).ok;if t~='none' and t~='set' then return redis.error_reply('invalid file request index') end end end
 redis.call('SET', KEYS[2], ARGV[1])
+if old~='' then redis.call('SREM',ARGV[3]..old,ARGV[4]) end
+if ARGV[2]=='save' and ARGV[5]~='' then redis.call('SADD',ARGV[3]..ARGV[5],ARGV[4]) end
 if ARGV[2] == 'delete' then
     return redis.call('DEL', KEYS[1])
 end
-return redis.call('HMSET', KEYS[1], unpack(ARGV, 3))
+return redis.call('HMSET', KEYS[1], unpack(ARGV, 6))
 `)
 
 // IncreaseDownloadCount increases the download count of a file atomically

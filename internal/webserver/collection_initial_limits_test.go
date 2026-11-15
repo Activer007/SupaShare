@@ -3,6 +3,7 @@
 package webserver
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
@@ -92,6 +93,9 @@ func TestCollectionInitialLimits(t *testing.T) {
 										wantFiles, wantSize = 0, 0
 									}
 									view := (&AdminView{}).convertGlobalConfig(ViewFileRequests, actor.user)
+									if err := view.loadFileRequestPage(context.Background(), actor.user, ""); err != nil {
+										t.Fatal(err)
+									}
 									wantVisible := 0
 									if list.owner == ordinary.Id || (list.owner == other.Id && actor.user.IsAdmin()) {
 										wantVisible = 1

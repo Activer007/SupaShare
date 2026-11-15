@@ -1640,8 +1640,8 @@
         "tags": [
           "uploadrequest"
         ],
-        "summary": "Lists all file requests",
-        "description": "This API call lists all file requests. Requires API permission MANAGE_FILE_REQUESTS. To view file requests created by a different user, the user needs to have the user permission LIST",
+        "summary": "Lists a bounded page of file requests",
+        "description": "Returns newest-first authorized requests, ordered by creation time and ID. Requires MANAGE_FILE_REQUESTS; LIST user permission retains cross-owner visibility. Follow X-Next-Cursor using before until the header is empty. A page is not a complete account inventory or authorization snapshot.",
         "operationId": "ulist",
         "security": [
           {
@@ -1663,6 +1663,14 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Pass as before for the next page; absent or empty when finished.",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "400": {
@@ -1671,7 +1679,30 @@
           "401": {
             "description": "Invalid API key provided for authentication or API key does not have the required permission"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor from X-Next-Cursor of the previous page."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Maximum records on this page."
+          }
+        ]
       }
     },
     "/uploadrequest/list/{id}": {
@@ -1729,7 +1760,7 @@
           "uploadrequest"
         ],
         "summary": "Creates a new or saves an existing upload request",
-        "description": "This API call creates a new upload request if the parameter ID is not submitted. If editing a request, only the submitted parameters will be changed. To save a request of a different user, the user requires the user permission EDIT to execute this call. Requires API permission MANAGE_FILE_REQUESTS",
+        "description": "This API call creates a new upload request if the parameter ID is not submitted. If editing a request, only the submitted parameters will be changed. To save a request of a different user, the user requires the user permission EDIT to execute this call. Requires API permission MANAGE_FILE_REQUESTS Creation atomically caps retained requests and linked credentials at 100 per owner and 10000 globally, including expired requests retained with files. Quota rejection creates neither record nor credential. On transport failure or 503, verify the management list before retrying creation; retries are not idempotent.",
         "operationId": "uploadrequestsave",
         "security": [
           {
@@ -1775,7 +1806,7 @@
           {
             "name": "expiry",
             "in": "header",
-            "description": "The collection deadline as a UTC unix timestamp. Defaults to five days from creation when omitted for a new request. No deadline if 0; omitted updates preserve the existing deadline. Collected files have an independent lifetime.",
+            "description": "UTC Unix timestamp. New requests default to five days. Ordinary accounts cannot create permanent requests: zero is normalized to five days, and a changed expiry must be in the future and at most 90 days away. Omitted or unchanged expiry preserves a legacy deadline, including permanent requests. Administrators may use permanent or longer deadlines through the API. Uploaded files have an independent lifetime.",
             "required": false,
             "style": "simple",
             "explode": false,
@@ -1837,6 +1868,15 @@
           },
           "404": {
             "description": "Upload request not found"
+          },
+          "409": {
+            "description": "Concurrent change or expired invitation; refresh before retry."
+          },
+          "429": {
+            "description": "Retained request or linked credential limit reached."
+          },
+          "503": {
+            "description": "Save unavailable or outcome uncertain; verify the list before retrying creation."
           }
         }
       }

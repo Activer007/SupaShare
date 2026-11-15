@@ -31,7 +31,8 @@ func TestLegacyCollectionPermissionGrant(t *testing.T) {
 			p.SaveUser(admin, false)
 			// Recreate the schema-11 boundary used by the existing file-request
 			// migration, while retaining the unrelated provider fixtures.
-			if _, err := p.sqliteDb.Exec(`ALTER TABLE FileMetaData DROP COLUMN UploadRequestId;
+			if _, err := p.sqliteDb.Exec(`DROP INDEX RequestFiles; DROP INDEX RequestKeys; DROP INDEX RequestKeysOwner;
+ ALTER TABLE FileMetaData DROP COLUMN UploadRequestId;
 				ALTER TABLE ApiKeys DROP COLUMN UploadRequestId;
 				DROP TABLE UploadRequests; DROP TABLE Statistics;`); err != nil {
 				t.Fatal(err)

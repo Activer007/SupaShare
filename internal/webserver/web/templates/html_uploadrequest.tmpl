@@ -151,6 +151,11 @@
                         </tbody>
                     </table>
   </div>
+  <nav class="d-flex gap-3 my-3" aria-label="{{.UI.T "request.pages"}}">
+    <a href="?">{{.UI.T "request.firstPage"}}</a>
+    {{if .FileRequestNextCursor}}<a href="?before={{.FileRequestNextCursor}}">{{.UI.T "request.nextPage"}}</a>{{end}}
+  </nav>
+  <p class="form-text text-muted">{{.UI.T "request.pageHelp"}}</p>
   {{template "delivery_create" .}}
   {{template "delivery_management" .}}
 </section>
@@ -252,9 +257,10 @@
             <label class="form-check-label" for="mc_expiry">{{$.UI.T "common.expiry"}}</label>
           </div>
           <div class="input-group">
-            <input type="text" id="mi_expiry"  disabled class="form-control" aria-label="{{$.UI.T "common.expiry"}}" aria-describedby="requestLimitsHelp" data-allow-regular-paste>
+            <input type="text" id="mi_expiry"  disabled class="form-control" aria-label="{{$.UI.T "common.expiry"}}" aria-describedby="requestExpiryHelp" data-allow-regular-paste>
           </div>
         </div>
+        <p class="form-text text-muted" id="requestExpiryHelp">{{$.UI.T "request.expiryPolicy"}}</p>
         <div class="settings-field mb-3">
           <label class="form-label" for="mi_downloads">{{$.UI.T "request.allowedDownloads"}}</label>
           <input type="number" id="mi_downloads" min="1" max="10" step="1" value="1" required class="form-control" aria-describedby="requestDownloadsHelp" data-allow-regular-paste>

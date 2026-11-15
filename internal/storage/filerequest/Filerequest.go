@@ -34,7 +34,13 @@ func Get(id string) (models.FileRequest, bool) {
 	if !ok {
 		return models.FileRequest{}, false
 	}
-	result.Populate(database.GetAllMetadata(), configuration.Get().MaxFileSizeMB)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	files, err := database.ReadFileRequestFiles(ctx, id)
+	if err != nil {
+		return models.FileRequest{}, false
+	}
+	result.Populate(files, configuration.Get().MaxFileSizeMB)
 	requests := []models.FileRequest{result}
 	populateReservationDisplay(requests, database.ReadUploadQuota)
 	return requests[0], true
@@ -140,4 +146,26 @@ func GetAllFiles(request models.FileRequest) []models.File {
 		}
 	}
 	return result
+}
+
+// Page reads only the authorized scope and the files belonging to that page.
+func Page(ctx context.Context, owner int, before string, limit int) ([]models.FileRequest, string, error) {
+	rows, err := database.ListFileRequestsPage(ctx, owner, before, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(rows) > limit {
+		rows = rows[:limit]
+		next = models.FileRequestCursor(rows[len(rows)-1])
+	}
+	for i := range rows {
+		files, e := database.ReadFileRequestFiles(ctx, rows[i].Id)
+		if e != nil {
+			return nil, "", e
+		}
+		rows[i].Populate(files, configuration.Get().MaxFileSizeMB)
+	}
+	populateReservationDisplay(rows, database.ReadUploadQuota)
+	return rows, next, nil
 }

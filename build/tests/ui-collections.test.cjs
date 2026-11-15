@@ -338,3 +338,22 @@ test('collection SharedWorker ignores upload-table notifications and consumes on
     port.onmessage({data:{type:'shutdown'}});
     assert.equal(context.window.location.href,'./login');
 });
+
+test('request expiry is finite for new requests while untouched legacy deadlines survive', async()=>{
+    const {context,field,now}=collectionFormContext();
+    const calls=[];
+    context.apiURequestSave=async(...args)=>{calls.push(args);return {};};
+    context.loadFileRequestDefaults();
+    assert.equal(field('mc_expiry').disabled,true);
+    field('mc_expiry').checked=false;
+    await assert.rejects(context.saveFileRequest(),/request.invalidExpiryWindow/);
+    field('mc_expiry').checked=true;
+    field('mi_expiry').value=now/1000+91*86400;
+    await assert.rejects(context.saveFileRequest(),/request.invalidExpiryWindow/);
+    assert.equal(calls.length,0);
+    for (const expiry of [0,now/1000-86400,now/1000+180*86400]) {
+        context.setModalValues('old','Legacy',0,0,expiry,'note',1);
+        await context.saveFileRequest();
+        assert.equal(Number(calls.at(-1)[4]),expiry);
+    }
+});

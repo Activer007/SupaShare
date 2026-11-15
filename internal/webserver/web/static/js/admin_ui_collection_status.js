@@ -173,7 +173,8 @@ async function performCollectionSummaryRefresh() {
     if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
     if (status && collectionSummaryRefreshManual) status.textContent = t('common.loading');
     try {
-        const result = await apiURequestList();
+        const visibleIds = [...document.querySelectorAll('[data-collection-summary]')].map(row => row.dataset.id);
+        const result = await apiURequestList(visibleIds);
         if (collectionSummaryAuthBlocked) return false;
         if (!Array.isArray(result.requests)) throw new Error('invalid collection summary');
         const snapshots = result.requests.map(collectionSummarySnapshot);
@@ -186,7 +187,7 @@ async function performCollectionSummaryRefresh() {
                 updateFileRequestControls(result.requests[index]);
             }
         }
-        if (typeof processCollectionArrivalSnapshots === 'function') processCollectionArrivalSnapshots(snapshots);
+        if (typeof processCollectionArrivalSnapshots === 'function') processCollectionArrivalSnapshots(snapshots, visibleIds);
         recordCollectionUpdatedTime();
         if (status && (collectionSummaryRefreshManual || status.textContent === t('collection.refreshFailed'))) {
             status.textContent = t('collection.refreshed');

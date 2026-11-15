@@ -22,7 +22,7 @@ type DatabaseProvider struct {
 }
 
 // DatabaseSchemeVersion contains the version number to be expected from the current database. If lower, an upgrade will be performed
-const DatabaseSchemeVersion = 23
+const DatabaseSchemeVersion = 24
 
 // New returns an instance
 func New(dbConfig models.DbConnection) (DatabaseProvider, error) {
@@ -139,6 +139,9 @@ func (p DatabaseProvider) Upgrade(currentDbVersion int) {
 	// N12 adds bounded owner pagination and lifecycle cleanup indexes.
 	if currentDbVersion < 23 {
 		helper.Check(p.initDeliveries())
+	}
+	if currentDbVersion < 24 {
+		helper.Check(p.initFileRequestLifecycle())
 	}
 }
 
@@ -312,6 +315,9 @@ func (p DatabaseProvider) createNewDatabase() error {
 		return err
 	}
 	if err := p.initAuthGeneration(); err != nil {
+		return err
+	}
+	if err := p.initFileRequestLifecycle(); err != nil {
 		return err
 	}
 	p.SetDbVersion(DatabaseSchemeVersion)

@@ -121,6 +121,7 @@ func (p DatabaseProvider) CheckEmptyForMigration(ctx context.Context) error {
 		p.dbPrefix + keyDbVersion:             true,
 		p.dbPrefix + keyDeliveriesVersion:     true,
 		p.dbPrefix + keyDeliveryIndexes:       true,
+		p.dbPrefix + keyFileRequestIndexes:    true,
 		p.dbPrefix + keyUploadQuota:           true,
 		p.dbPrefix + keyMetadataRevision:      true,
 		p.dbPrefix + keyBlobCandidatesVersion: true,
@@ -295,6 +296,7 @@ func (p DatabaseProvider) quotaAttemptWithPatch(ctx context.Context, mutate quot
 	}
 	var metadataArgs redigo.Args
 	hotlinkKey := ""
+	requestFilesKey := ""
 	if file != nil {
 		// Also watch the target itself: an old or external writer may change its
 		// type without participating in our metadata revision protocol.
@@ -315,6 +317,19 @@ func (p DatabaseProvider) quotaAttemptWithPatch(ctx context.Context, mutate quot
 			return uploadquota.Reservation{}, false, err
 		}
 		metadataArgs = p.buildArgs(prefixMetaData + file.Id).AddFlat(marshalled)
+		if file.UploadRequestId != "" {
+			requestFilesKey = p.dbPrefix + frIndex + "files:" + file.UploadRequestId
+			if _, err = redigo.DoContext(conn, ctx, "WATCH", requestFilesKey); err != nil {
+				return uploadquota.Reservation{}, false, err
+			}
+			kind, err := redigo.String(redigo.DoContext(conn, ctx, "TYPE", requestFilesKey))
+			if err != nil {
+				return uploadquota.Reservation{}, false, err
+			}
+			if kind != "none" && kind != "set" {
+				return uploadquota.Reservation{}, false, uploadquota.ErrSchema
+			}
+		}
 		if file.HotlinkId != "" {
 			hotlinkKey = p.dbPrefix + prefixHotlinks + file.HotlinkId
 			if _, err = redigo.DoContext(conn, ctx, "WATCH", hotlinkKey); err != nil {
@@ -370,6 +385,11 @@ func (p DatabaseProvider) quotaAttemptWithPatch(ctx context.Context, mutate quot
 			return uploadquota.Reservation{}, false, err
 		}
 	}
+	if requestFilesKey != "" {
+		if _, err = redigo.DoContext(conn, ctx, "SADD", requestFilesKey, file.Id); err != nil {
+			return uploadquota.Reservation{}, false, err
+		}
+	}
 	if hotlinkKey != "" {
 		if _, err = redigo.DoContext(conn, ctx, "SET", hotlinkKey, file.Id); err != nil {
 			return uploadquota.Reservation{}, false, err
@@ -387,6 +407,9 @@ func (p DatabaseProvider) quotaAttemptWithPatch(ctx context.Context, mutate quot
 		return uploadquota.Reservation{}, true, nil
 	}
 	expected := 2
+	if requestFilesKey != "" {
+		expected++
+	}
 	if patch != nil {
 		expected++
 	}
