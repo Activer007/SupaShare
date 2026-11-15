@@ -77,3 +77,5 @@ and the baseline failure explicitly rather than claiming an all-green suite.
 - 改为直接读取 raw 终端中的字节，显式执行 64 KiB 上限，支持 UTF-8 退格和 Ctrl-U 清行。Ctrl-C / Ctrl-D 取消；其他终端控制输入在本行结束后报错取消。超长及无效行在无回显状态下读至 Enter，再恢复终端并返回明确错误。交互行为已同步到 CLI 密码来源文档。
 - 新增定向回归，5000 个 ASCII 字符、5000 个中文字符和恰好 64 KiB 输入完整返回，超限输入失败，UTF-8 退格、清行和取消输入通过。`secretinput` race 与 vet 通过。
 - macOS 原生 PTY 复验全部原有提示和中断恢复场景，并补充 5000-byte、65536-byte 完整解析、65537-byte 显式拒绝、UTF-8 退格及不支持的终端控制输入。各场景均无合成秘密回显且终端状态恢复。修复后 server / CLI 再构建通过，Windows amd64 secretinput 测试包交叉编译通过。
+- 第二轮审查 `bfaf13cb788e9453062d9847f015c2d115327072` 发现 P2，单次粘贴两行迁移 URL 时，每个提示各自创建的 bufio.Reader 会预读并丢弃下一行。已改为逐字节读取至当前行终止符，后续输入留给下一个提示；新增连续行与超限行结束后保留后续字节的回归。
+- macOS 原生 PTY 单次写入两行迁移 URL 后，两次提示完成且解析内容准确，终端状态恢复、无秘密回显。全部已有提示、长输入和中断场景复验通过。`secretinput` race / vet、server / CLI 生产构建及 Windows amd64 secretinput 测试包交叉编译再次通过。

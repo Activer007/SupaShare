@@ -1,6 +1,7 @@
 package secretinput
 
 import (
+	"io"
 	"strings"
 	"testing"
 )
@@ -16,6 +17,20 @@ func TestHiddenLineDoesNotTruncate(t *testing.T) {
 	got, err := readHiddenLine(input)
 	if err == nil || got != "" || !strings.Contains(err.Error(), "64 KiB") {
 		t.Fatal("oversized input accepted or limit not reported")
+	}
+	remaining, err := io.ReadAll(input)
+	if err != nil || string(remaining) != "remaining" {
+		t.Fatal("rejected line consumed bytes after Enter", err)
+	}
+}
+
+func TestHiddenLinePreservesNextPrompt(t *testing.T) {
+	input := strings.NewReader("synthetic-source\rsynthetic-destination\r")
+	for _, want := range []string{"synthetic-source", "synthetic-destination"} {
+		got, err := readHiddenLine(input)
+		if err != nil || got != want {
+			t.Fatal("consecutive prompts lost already-pasted input", err)
+		}
 	}
 }
 

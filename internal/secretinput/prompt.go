@@ -1,7 +1,6 @@
 package secretinput
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -55,15 +54,18 @@ func readHidden(label string) (string, error) {
 // Read raw input directly: term.Terminal silently drops characters after its
 // editor limit. Keep a byte-bounded line with basic backspace/clear editing.
 func readHiddenLine(input io.Reader) (string, error) {
-	reader := bufio.NewReader(input)
+	// Read one byte at a time so later prompts retain any already-pasted line.
+	// A per-prompt buffered reader would discard bytes prefetched past Enter.
+	var next [1]byte
 	line := make([]byte, 0, MaxBytes)
 	defer func() { clear(line) }()
 	var invalid error
 	for {
-		key, err := reader.ReadByte()
+		_, err := io.ReadFull(input, next[:])
 		if err != nil {
 			return "", errors.New("could not read hidden input; input cancelled")
 		}
+		key := next[0]
 		switch key {
 		case '\r', '\n':
 			if invalid != nil {

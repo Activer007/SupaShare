@@ -34,7 +34,7 @@ removes the preceding UTF-8 character and Ctrl-U clears the line. Ctrl-C and
 Ctrl-D cancel input. Other terminal control input, including cursor escape
 sequences, causes the line to be rejected when Enter is pressed. Oversized and
 unsupported lines are consumed through Enter while echo remains disabled,
-then fail explicitly. No truncated prefix is accepted.
+then fail explicitly. Consecutive prompts preserve already-pasted later lines.
 
 Legacy `-p VALUE` / `--password VALUE` remains compatible, including an explicitly
 empty password; it emits a warning without printing the value. `-p=VALUE` and
