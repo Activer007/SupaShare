@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	templatetext "text/template"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/authorization"
@@ -210,7 +209,7 @@ func handleFavicon(w http.ResponseWriter, r *http.Request) {
 }
 
 func loadExpiryImage() {
-	svgTemplate, err := templatetext.ParseFS(templateFolderEmbedded, "web/templates/expired_file_svg.tmpl")
+	svgTemplate, err := template.ParseFS(templateFolderEmbedded, "web/templates/expired_file_svg.tmpl")
 	helper.Check(err)
 	var buf bytes.Buffer
 	language := "en"
@@ -777,17 +776,22 @@ func showHotlink(w http.ResponseWriter, r *http.Request) {
 		if err := ratelimiter.WaitOnFailedId(r); err != nil {
 			return
 		}
-		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = w.Write(imageExpiredPicture)
+		writeExpiredSvg(w)
 		return
 	}
 	validFile := storage.ServePublicFile(file, w, r, false, hotlinkId)
 	if !validFile {
 		// Only called if the file has already expired during the expiry check of storage.ServeFile()
-		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = w.Write(imageExpiredPicture)
+		writeExpiredSvg(w)
 		return
 	}
+}
+
+func writeExpiredSvg(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(imageExpiredPicture)
 }
 
 // Checks if a file is associated with the GET parameter from the current URL
