@@ -8,6 +8,33 @@ Overview of all changes
 -----------------------
 
 
+v2.19.0 (2026-11-15; source update, not a published release)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Security rollup of merged PRs #114--119 (2026-11-14--15); this is not a GitHub
+Release, deployment or claim that all findings are resolved.
+
+* SEC-2026-010 / SEC-2026-014: Isolate async chunk assembly goroutines with top-level
+  recover guard against unhandled panics and system crashes; return explicit HTTP 500
+  on sync failures and safeguard SSE Flusher interface assertions.
+* SEC-2026-011: Introduce multi-tiered connection limits on SSE upload status streams
+  (maximum 10 connections per user, 500 globally) to prevent descriptor and goroutine
+  resource exhaustion attacks.
+* SEC-2026-012: Decouple API rate limiting from authenticated API callers to avoid
+  artificial 1 QPS throttling on legitimate automation, and throttle unauthenticated
+  flood traffic before database credential verification.
+* SEC-2026-013: Harden File Request cascade deletion to prevent detached orphan files
+  when active downloads delay immediate file deletion.
+* SEC-2026-001--008: Resolve TOCTOU replace races, sanitize telemetry error logs to
+  prevent API key exposure, restrict session cookie path scoping, and enforce secure
+  forwarded proxy validation.
+
+Upgrade notes: this source update requires no new database migration. Stop old
+instances and back up configuration and database before updating. See
+`2.19.0 upgrade notes <https://github.com/Activer007/SupaShare/blob/master/docs/releases/2.19.0.md>`__
+for the full PR index and security verification records.
+
+
 v2.18.0 (2026-11-14; source update, not a published release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

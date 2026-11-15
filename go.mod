@@ -15,6 +15,7 @@ require (
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/secure-io/sio-go v0.3.1
 	github.com/shirou/gopsutil/v4 v4.26.8
+	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 	golang.org/x/oauth2 v0.37.0
@@ -40,14 +41,12 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
-	github.com/tdewolff/minify/v2 v2.24.17 // indirect
-	github.com/tdewolff/parse/v2 v2.8.16 // indirect
+	github.com/tdewolff/minify/v2 v2.24.25 // indirect
+	github.com/tdewolff/parse/v2 v2.8.20 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/yuin/gopher-lua v1.1.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
-	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/tools v0.50.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	modernc.org/libc v1.75.7 // indirect
@@ -57,5 +56,5 @@ require (
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0
 )
