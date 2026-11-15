@@ -100,3 +100,12 @@ func TestWriteToFileResilience(t *testing.T) {
 	_, _ = GetAll()
 	_ = GetSince(time.Now().Unix())
 }
+
+func TestCheckUntrustedForwardingHeader(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "198.51.100.1:12345"
+	req.Header.Set("X-Forwarded-For", "203.0.113.1")
+
+	ip := GetIpAddress(req)
+	test.IsEqualString(t, ip, "198.51.100.1")
+}

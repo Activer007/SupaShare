@@ -1,3 +1,6 @@
+# SupaShare Quickstart Compose
+# For hardened production deployments using dedicated non-root execution (UID/GID 10001:10001),
+# read-only rootfs, and dropped capabilities, use `docker-compose.nonroot.yaml` (see docs/security/ADR-005-NONROOT-COMPOSE.md).
 services:
   supashare:
     build: .
