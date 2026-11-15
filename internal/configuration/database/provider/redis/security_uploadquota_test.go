@@ -210,6 +210,8 @@ func TestSEC030RedisIntegerPrecision(t *testing.T) {
 			s := sec030RedisNew(t)
 			change := sec030RedisChange("exact", n)
 			change.Limits.User.Bytes, change.Limits.Request.Bytes, change.Limits.Instance.Bytes, change.Limits.StagingBytes = n, n, n, n
+			// This precision fixture intentionally fills the complete explicit budget.
+			change.Limits.UserStagingBytes, change.Limits.RequestStagingBytes = n, n
 			sec030RedisApply(t, s.db, change)
 			claim := change
 			claim.Action, claim.FileID = uploadquota.Claim, "exact-file"

@@ -21,7 +21,9 @@ func wholeUploadLimits(env environment.Environment) (uploadquota.Limits, error) 
 		User:       uploadquota.Usage{Bytes: env.UploadUserTotalMB * mib, Files: env.UploadUserMaxFiles},
 		Instance:   uploadquota.Usage{Bytes: env.UploadInstanceTotalMB * mib, Files: env.UploadInstanceMaxFiles},
 		UserActive: env.UploadUserActive, InstanceActive: env.UploadInstanceActive,
-		StagingBytes: env.UploadStagingMB * mib,
+		StagingBytes:        env.UploadStagingMB * mib,
+		UserStagingBytes:    env.UploadUserStagingMB * mib,
+		RequestStagingBytes: env.UploadRequestStagingMB * mib,
 	}, nil
 }
 

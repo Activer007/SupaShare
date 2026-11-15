@@ -732,5 +732,10 @@
   "request.nextPage": "下一页",
   "request.pageHelp": "数量与刷新仅针对当前页。可通过下一页查看较早的收集。",
   "request.expiryPolicy": "新收集默认有效 5 天，最长 90 天。已有截止时间在未修改时保持不变。到期后邀请凭证失效，不会自动删除已上传文件；保留的收集仍计入数量限额。",
-  "request.invalidExpiryWindow": "请选择未来 90 天内的截止时间；已有截止时间可保持不变。"
+  "request.invalidExpiryWindow": "请选择未来 90 天内的截止时间；已有截止时间可保持不变。",
+  "quota.adminUsed": "已用 {used}（管理员不受累计字节额度限制）",
+  "quota.ordinaryTitle": "普通用户当前生效限制（只读）",
+  "quota.ordinaryLimits": "每用户累计文件大小：{total}；每个文件收集请求累计大小：{logicalRequest}；实例累计逻辑大小规则：{logicalGlobal}（统计包含管理员文件，并非仅普通用户用量）；文件数量：{files}；每用户暂存份额：{user}；每个文件收集请求暂存份额：{request}；全局物理暂存硬上限：{global}。",
+  "quota.adminExemption": "管理员豁免累计字节额度和用户／收集请求暂存份额限制；单文件大小、文件数量、并发活动数量与全局物理暂存硬上限仍然有效。",
+  "quota.stagingMeaning": "暂存份额包含上传处理期间的预留空间，不等于单文件可上传大小。自动配置显示解析后的实际限额，0 不代表无限。"
 }
