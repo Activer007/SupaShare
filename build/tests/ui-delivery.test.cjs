@@ -190,6 +190,52 @@ test('paginated refresh retains uncertain guard until all pages are loaded and r
     assert.equal(nodes.deliveryCreateSubmit.disabled,false);
 });
 
+test('failed first-page refresh cannot let old pagination clear the uncertain creation guard', async () => {
+    const {context, nodes} = deliveryContext();
+    nodes.deliveryMore = {hidden: true, disabled: false};
+    let phase = 'old';
+    let creates = 0;
+    context.deliveryRequest = async (action, payload, before) => {
+        if (action === 'create') {
+            creates++;
+            throw new TypeError('committed response lost');
+        }
+        if (phase === 'old') {
+            return Object.assign([{title: 'old first page'}], {nextCursor: 'old-cursor'});
+        }
+        if (phase === 'failed-refresh') {
+            if (!before) throw new TypeError('first page unavailable');
+            assert.equal(before, 'old-cursor');
+            return [{title: 'old last page'}];
+        }
+        if (!before) {
+            return Object.assign([{title: 'newly committed delivery'}], {nextCursor: 'new-cursor'});
+        }
+        assert.equal(before, 'new-cursor');
+        return [{title: 'new last page'}];
+    };
+
+    await context.refreshDeliveries();
+    await context.createDelivery({preventDefault(){}});
+    phase = 'failed-refresh';
+    await context.refreshDeliveries();
+    assert.equal(nodes.deliveryMore.hidden, false);
+    assert.equal(nodes.deliveryCreateSubmit.disabled, true);
+    await context.refreshDeliveries(true);
+    assert.equal(context.rendered.length, 2);
+    assert.equal(nodes.deliveryCreateSubmit.disabled, true);
+    await context.createDelivery({preventDefault(){}});
+    assert.equal(creates, 1);
+
+    phase = 'new-refresh';
+    await context.refreshDeliveries();
+    assert.equal(nodes.deliveryCreateSubmit.disabled, true);
+    assert.equal(context.rendered[0].title, 'newly committed delivery');
+    await context.refreshDeliveries(true);
+    assert.equal(nodes.deliveryCreateSubmit.disabled, false);
+    assert.match(nodes.deliveryStatus.textContent, /delivery.inspectBeforeRetry/);
+});
+
 test('quota error is actionable and does not create an uncertain retry', async()=>{
     const {context,nodes}=deliveryContext();
     context.deliveryRequest=async()=>{throw Object.assign(new Error('limit'),{status:429});};

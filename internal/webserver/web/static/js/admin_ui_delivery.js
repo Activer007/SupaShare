@@ -201,9 +201,10 @@ async function refreshDeliveries(more = false) {
     if (button.disabled || (more && !deliveryNextCursor)) return;
     button.disabled = true;
     const status = document.getElementById('deliveryListStatus');
-    // A query already in flight before an uncertain write cannot confirm it.
-    if (!more) deliveryListCanResolveUncertain = deliveryCreateUncertain;
-    const checkingUncertain = deliveryListCanResolveUncertain;
+    // Capture eligibility before the request. A failed first-page refresh
+    // must leave the old pagination unable to confirm an uncertain write.
+    const checkingUncertain = more ? deliveryListCanResolveUncertain : deliveryCreateUncertain;
+    if (!more) deliveryListCanResolveUncertain = false;
     const moreButton = document.getElementById('deliveryMore');
     if (moreButton) moreButton.disabled = true;
     status.textContent = t('common.loading');
@@ -213,6 +214,7 @@ async function refreshDeliveries(more = false) {
         deliveryNextCursor = items.nextCursor || '';
         deliveryItems = more ? [...deliveryItems, ...items] : items;
         renderDeliveries(deliveryItems);
+        if (!more) deliveryListCanResolveUncertain = checkingUncertain;
         if (moreButton) moreButton.hidden = !deliveryNextCursor;
         status.textContent = deliveryNextCursor ? t('delivery.moreAvailable') : '';
         if (checkingUncertain && deliveryCreateUncertain && !deliveryNextCursor) {
