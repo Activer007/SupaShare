@@ -259,6 +259,10 @@ func DownloadFile(params cliflags.FlagConfig) error {
 	if limit < 0 || info.SizeBytes < 0 || info.SizeBytes > limit {
 		return errors.New("download exceeds client byte limit or has invalid size")
 	}
+	// Match the server's legacy ordinary/raw read compatibility. Collection
+	// and encrypted records still require the exact advertised metadata size.
+	legacyUnknownSize := info.SizeBytes == 0 && !info.IsFileRequest && info.FileRequestId == "" &&
+		!info.IsEncrypted && !info.IsEndToEndEncrypted
 	var cipher []byte
 	if info.IsEndToEndEncrypted {
 		if len(e2eKey) == 0 {
@@ -315,10 +319,21 @@ func DownloadFile(params cliflags.FlagConfig) error {
 	if resp.StatusCode != http.StatusOK {
 		return fail(fmt.Errorf("download HTTP status %d", resp.StatusCode))
 	}
-	if resp.ContentLength >= 0 && resp.ContentLength != info.SizeBytes {
+	expectedWireSize := info.SizeBytes
+	if legacyUnknownSize {
+		expectedWireSize = resp.ContentLength
+	}
+	if resp.ContentLength > limit {
+		return fail(errors.New("download content length exceeds client byte limit"))
+	}
+	if expectedWireSize >= 0 && resp.ContentLength >= 0 && resp.ContentLength != expectedWireSize {
 		return fail(errors.New("download content length does not match metadata"))
 	}
-	wire := &downloadReader{r: resp.Body, remaining: info.SizeBytes}
+	wireBudget := expectedWireSize
+	if wireBudget < 0 {
+		wireBudget = limit
+	}
+	wire := &downloadReader{r: resp.Body, remaining: wireBudget}
 	var body io.Reader = wire
 	if info.IsEndToEndEncrypted {
 		body, err = encryption.GetDecryptReader(cipher, wire)
@@ -328,7 +343,7 @@ func DownloadFile(params cliflags.FlagConfig) error {
 	}
 	var output io.Reader = &downloadReader{r: body, remaining: limit}
 	if !params.JsonOutput {
-		bar := progressbar.DefaultBytes(info.SizeBytes, "Downloading")
+		bar := progressbar.DefaultBytes(expectedWireSize, "Downloading")
 		defer bar.Close()
 		output = io.TeeReader(output, bar)
 	}
@@ -337,8 +352,8 @@ func DownloadFile(params cliflags.FlagConfig) error {
 		return fail(err)
 	}
 	// E2E SizeBytes is ciphertext size; plaintext size is not exposed by this API.
-	// Consume to authenticated EOF and require the exact advertised wire length.
-	if wire.remaining != 0 {
+	// Consume to authenticated EOF and check the wire length whenever known.
+	if expectedWireSize >= 0 && wire.remaining != 0 {
 		return fail(errors.New("download ended before advertised size"))
 	}
 	if err = file.Sync(); err != nil {

@@ -11,8 +11,64 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestDownloadLegacyUnknownSize(t *testing.T) {
+	oldURL, oldKey, oldE2E := gokapiUrl, apiKey, e2eKey
+	defer func() { gokapiUrl, apiKey, e2eKey = oldURL, oldKey, oldE2E }()
+	for _, tc := range []struct {
+		name          string
+		info          models.FileApiOutput
+		contentLength bool
+		limit         int64
+		pass          bool
+	}{
+		{name: "legacy-header", contentLength: true, limit: 3, pass: true},
+		{name: "legacy-stream", limit: 3, pass: true},
+		{name: "legacy-header-over-cap", contentLength: true, limit: 2},
+		{name: "legacy-stream-over-cap", limit: 2},
+		{name: "encrypted-stays-strict", info: models.FileApiOutput{IsEncrypted: true}, limit: 3},
+		{name: "collection-stays-strict", info: models.FileApiOutput{IsFileRequest: true}, limit: 3},
+		{name: "collection-id-stays-strict", info: models.FileApiOutput{FileRequestId: "request"}, limit: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.Contains(r.URL.Path, "/list/"):
+					info := tc.info
+					info.Name = "legacy.bin"
+					_ = json.NewEncoder(w).Encode(info)
+				case strings.Contains(r.URL.Path, "/delete"):
+					deleted.Store(true)
+				default:
+					if tc.contentLength {
+						w.Header().Set("Content-Length", "3")
+					} else {
+						w.(http.Flusher).Flush()
+					}
+					_, _ = io.WriteString(w, "abc")
+				}
+			}))
+			defer server.Close()
+			if err := Init(server.URL, "synthetic", nil); err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			err := DownloadFile(cliflags.FlagConfig{DownloadId: "legacy", OutputPath: dir,
+				JsonOutput: true, RemoveRemote: true, MaxDownloadBytes: tc.limit})
+			if (err == nil) != tc.pass || deleted.Load() != tc.pass {
+				t.Fatalf("success=%v deleted=%v err=%v", tc.pass, deleted.Load(), err)
+			}
+			data, readErr := os.ReadFile(filepath.Join(dir, "legacy.bin"))
+			if readErr != nil || int64(len(data)) > tc.limit || tc.pass && string(data) != "abc" {
+				t.Fatal("legacy output exceeded its limit or lost content", readErr)
+			}
+		})
+	}
+}
 
 func TestDownloadSizeAndExclusiveOutput(t *testing.T) {
 	for _, tc := range []struct {

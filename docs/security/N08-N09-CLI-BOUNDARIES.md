@@ -47,6 +47,11 @@ and bound disk output. For E2E, the API SizeBytes is ciphertext size: both wire
 and plaintext are capped, and the decryptor must authenticate EOF. Exact clear
 size is not asserted because the API does not expose it as a numeric field.
 
+Legacy ordinary, unencrypted records can expose `SizeBytes=0` for unknown size.
+They retain the server's established read compatibility, using Content-Length
+when available and the client byte cap through EOF otherwise. Collection and
+encrypted metadata retain exact size checks.
+
 The output directory is pinned with os.Root and the final component is created
 exclusively, mode 0600, without overwriting a regular file or following a leaf
 symlink. This does not impose N06 secret-file ACL policy on ordinary downloads;
@@ -98,3 +103,9 @@ and terminal behavior must be recorded separately from cross-compilation.
 - 回环服务返回带 OSC / BEL / Unicode 格式字符的元数据，原生 CLI 人类输出显示转义，JSON 解码后保留原始字段。全部账号、输入文件、服务和数据均属于 `/private/tmp/supashare-n08-n09-qa` 隔离验证环境。
 - 30 分钟为分片／下载单请求的绝对期限，持续有进展也会到期。本地使用短时小文件，未实跑等待 30 分钟到期。普通下载沿用输出目录 ACL，本次 mode 验证不构成 N06 私密文件 ACL 验收。失败 partial 保留行为与恢复说明维持上文约定。
 - 云端全仓及交叉编译结果直接复用，本地未重跑全仓。保留同基线 `TestAdminRenewalAuth` 与 TestTempDir 夹具记录。Windows 原生 console、UNC / junction / ACL / 文件替换仍待验证，真实 S3 运行及大文件／长时压测未执行。GitHub Actions 当前 disabled，空 check-runs 无法提供 CI 通过证据。
+
+### Auto Review 修复与回归
+
+- 首轮审查 `ba6da2cb5cbbb3056fb19763d6eceb0871c98556` 发现 P2，旧版普通未加密记录以 `SizeBytes=0` 表示未知大小，新精确比较会阻止其下载。已按服务端 `legacyUnknownSize` 范围保留兼容，使用响应 Content-Length 或客户端流量预算，同时保留 collection / encrypted 的精确检查。人类进度展示使用实际已知长度或未知长度模式。
+- 新增有／无 Content-Length 的旧记录成功与超额拒绝回归，并核对 collection / encrypted 继续严格校验，失败保持 partial 且禁止远端删除。`TestDownload` 定向 race、cliapi vet 与生产 CLI 再构建通过。
+- 真实 server 的合成旧记录保持 `SizeBytes=0`，修复后的原生 CLI JSON／人类模式下载均与内容一致；小预算拒绝并保留远端文件。共享下载路径改动后，完整 E2E 上传／下载／认证失败／安全删除，以及原生重定向、流量和终端输出夹具复验通过。
