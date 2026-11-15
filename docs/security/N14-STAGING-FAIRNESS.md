@@ -66,3 +66,14 @@ Reserved、Uploading、Committed 等所有尚未确认释放的记录都占用�
 - 没有本次真实 Redis、完整浏览器人工操作或 2 GiB 速率压测结果；后续本地 Codex PR 审查需保留这些边界。
 
 最终工作区临时目录全仓执行后，除上述 TMPDIR 专用夹具和已复现的基线会话续期测试外，其余包通过（含 API 与完整接收回归）；未更改这些失败项的生产逻辑。
+
+## 本地集成验证（2026-11-15）
+
+- 补丁为 189745 bytes，SHA256 为 `fbbf8cd97da666e6743bf69cc270b0a5517145370c9bcb2f239c5e0d3b8e8f2f`。复用现有 worktree，基于上述 master 集成。`go generate ./cmd/supashare` 产物与补丁一致，`go build -tags=noaws ./cmd/supashare` 和 `git diff --check` 通过。
+- 复用云端已有单元测试结果，本地补充 Redis 7 Alpine 实例，绑定回环地址并开启 AOF。在独立临时 module 中复用本组 provider 用例，替换 miniredis 连接为真实 Redis，`go test -race -count=1 -v ./...` 通过。覆盖首次 Bind 的 request / 跨 request 同 owner / 不同 owner 并发准入，角色升降级、伪造豁免、管理员全局硬限、累计逻辑字节豁免、请求单文件限制、数量与活动数限制，以及向管理员转交。
+- 使用独立 HTTP 服务、合成账号和文件，将 user / request / instance 累计逻辑额度均设为 1 MiB，全局暂存为 12 MiB，自动 owner / request 份额为 6 / 3 MiB，单文件上限为 3 MiB。普通用户 256 KiB 整文件成功；Admin 与 SuperAdmin 的 2 MiB 整文件成功；普通用户 2 MiB 整文件返回 413；管理员 3 MiB 整文件因 `4 × size + 64 KiB` 超全局暂存返回 507；4 MiB 文件在正文接收层返回 400 和 `upload request is too large`。
+- 真实 HTTP 入口验证管理员复制、向管理员转交、管理员目标文件替换成功。向普通用户转交、普通用户复制、以普通用户文件为替换目标均返回 413，最后一项由管理员发起，仍按目标 owner 检查。管理员最终逻辑用量为 10 MiB，普通用户仍为 256 KiB；普通用户 quota summary 无 `adminPolicy`。管理员占用超过实例逻辑额度后，普通用户公开邀请的无正文 reserve 已返回 413。
+- 浏览器使用隔离 context 实际登录 Admin / 普通用户，检查中文与英文管理员限额说明、普通用户额度展示、管理面板隐藏状态及横向溢出。管理员公开邀请页面选择 2 MiB 合成 `File` 后点击实际上传按钮，分片与完成流程成功，剩余文件数由 12 减至 11。浏览器通过 `DataTransfer` 设置 file input 并触发 change，以此替代本机文件选择器；下载正文 SHA256 与合成内容匹配。三类页面均无 console error / warn。
+- 管理员公开上传的账本声明为 9 MiB，超过普通 request 的 3 MiB 与 owner 的 6 MiB，完成后确认释放。该实测再次确认上文公开邀请继承管理员豁免的风险。
+- 服务正常退出后重启 Redis，再启动服务。三个验证账本的 SHA256 保持一致，未释放的 600-byte 绑定声明仍保留；已完成的浏览器上传仍可下载，正文哈希一致，管理员 quota summary 保留 10 MiB 用量与 12 MiB 全局暂存配置。
+- 本地验证使用小预算和小文件。2 GiB 速率压测、AWS / S3 运行验证、全仓测试重跑均未执行，沿用上文云端验证及已知基线失败记录。仓库 GitHub Actions 当前为 disabled，空 check-runs 不作为 CI 通过结果。
