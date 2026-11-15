@@ -59,3 +59,14 @@ finding group. Never paste real passwords/connection URLs into commands, logs,
 PR descriptions or screenshots. Use synthetic credentials for native prompt
 checks, including cancellation and terminal restoration. Record platform limits
 and the baseline failure explicitly rather than claiming an all-green suite.
+
+## 本地 macOS 集成验证（2026-11-15）
+
+- 基线与最新 master 均为 `6183c1b283475dc57685882e56294cac1a0d3f3c`，PR #113 已合并。补丁为 50195 bytes，SHA256 为 `f747bc9b71b57628b6724b8f9748f819f59f7a09c72af175a2692bbeb0408672`，校验后无冲突应用。复用已有干净 worktree，版本沿用 2.18.0。
+- 原生 macOS 15.7 / x86_64，Go 1.26.10 darwin/amd64。server 与 CLI 的生产 noaws 构建通过，`git diff --check` 通过。本轮数据、测试程序及二进制均位于独立 `/private/tmp/supashare-n07-qa` 目录。
+- `TMPDIR=/private/tmp/supashare-n07-qa go test -race -tags=test,noaws ./internal/secretinput ./internal/environment/flagparser ./internal/configuration/database/migration ./cmd/cli-uploader/cliflags -count=1 -v` 通过，补充本次原生文件权限、终端不可用及参数解析证据。
+- 独立临时 module 调用实际 flagparser / cliflags 入口，用 macOS `pty.openpty` 驱动管理员密码、upload / upload-dir / download 密码及迁移双提示。输入时原生 termios ECHO 关闭，输出无合成秘密；正常完成后所有终端状态恢复，仅归一化内核 PENDIN 位。
+- 同一终端验证部分输入后 Ctrl-C、外部 SIGINT、SIGTERM、EOF 和空输入，均以失败退出并恢复终端状态，输出无部分合成秘密。上述证据来自 POSIX PTY，Windows console 原生行为仍待验证。
+- 私有文件 CRLF 输入成功；首次解析后删除文件，再连续构造三次 Environment 成功。三个 CLI 模式的私有文件来源均成功，管理员及 CLI 旧 argv 来源仍成功并在 stderr 给出脱敏提醒。0600 输入文件添加实际 Darwin `everyone allow read` ACL 后读取失败，诊断保持通用错误；测试 ACL 随即移除。
+- 真实生产 server 的迁移命令通过私有 URL 文件完成 SQLite → SQLite，核对源、目标数据库内合成用户一致，输出无连接 URL、临时路径或合成凭据。另覆盖不支持的源协议、畸形源 URL、不支持的目标协议及回环地址连接失败，均返回脱敏诊断。连接测试使用假凭据和本机回环地址。
+- 云端 Linux、全仓与交叉编译结果直接复用。本地未重跑全仓，保留云端 TestTempDir 夹具及同基线 `TestAdminRenewalAuth` 失败记录。Windows 原生终端、UNC / junction / ACL / 替换验证仍待完成。GitHub Actions 当前 disabled，空 check-runs 无法提供 CI 通过证据。
