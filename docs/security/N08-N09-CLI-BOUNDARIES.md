@@ -85,3 +85,16 @@ and terminal behavior must be recorded separately from cross-compilation.
   executor's workspace TMPDIR; environment tests pass with TMPDIR unset.
   `TestAdminRenewalAuth: Session not renewed` independently reproduces on pristine
   base 156a3f2. Neither unrelated issue is claimed fixed by this batch.
+
+### 本地 macOS 集成验证（2026-11-15）
+
+- 最新 master 为 `156a3f293165f4a4979d3c87ad4837d75ded8fd8`，PR #114 已合并。联合补丁为 60047 bytes，SHA256 为 `c6d694be2a08ad2cb5704b096b310ed375b8a814e353e9e618432e118026db3f`，校验后无冲突应用。复用已有干净 worktree，版本沿用 2.18.0。
+- 原生 macOS 15.7 / x86_64，Go 1.26.10 darwin/amd64。server / CLI 生产 noaws 构建、`git diff --check` 和 CLI 子树及 serviceurl / safedisplay 的 vet 通过。
+- `TMPDIR=/private/tmp/supashare-n08-n09-qa go test -race -tags=test,noaws ./cmd/cli-uploader/... ./internal/serviceurl ./internal/safedisplay -count=1` 通过，补充 macOS 原生文件系统、网络与输出证据，包含替换目标名称后的失败清理回归。
+- 使用构建后的原生 CLI 执行现有 `build/test-cli-secret-input.py`，19 个 POSIX PTY 场景通过。核对规范化目标展示及 yes 确认、欺骗 userinfo / query / fragment 在 API key 提示前拒绝、拒绝确认、API / E2E 隐藏输入及中断恢复。
+- 启动独立真实 server、SQLite 与合成 E2E 账号，客户端实际上传 2097169-byte 内容，使用 1 MiB 分片，得到 2099233-byte 密文。真实 `/chunk/add`、`/chunk/complete`、E2E lease / get / set 与 DownloadFile 流程完成，下载明文 SHA256 与源一致，文件 mode 为 0600。
+- 真实 E2E 下载入口拒绝已有文件、最终 symlink 和过小密文字节预算。对隔离数据中的密文末尾认证标签做同长度破坏后，下载认证失败、0600 partial 保留，`--remove` 未执行远端删除；恢复密文后重新下载并执行 `--remove` 成功，明文哈希一致，随后远端查询返回 404。
+- 原生 CLI 配合两个回环 HTTP 服务验证简单反向代理 base path、控制面跨源重定向拒绝、存储下载跨源及返回原 origin 后 API key 均已移除。流式响应超出元数据长度时，磁盘仅写入预算内前缀，partial 保留且禁止远端删除。
+- 回环服务返回带 OSC / BEL / Unicode 格式字符的元数据，原生 CLI 人类输出显示转义，JSON 解码后保留原始字段。全部账号、输入文件、服务和数据均属于 `/private/tmp/supashare-n08-n09-qa` 隔离验证环境。
+- 30 分钟为分片／下载单请求的绝对期限，持续有进展也会到期。本地使用短时小文件，未实跑等待 30 分钟到期。普通下载沿用输出目录 ACL，本次 mode 验证不构成 N06 私密文件 ACL 验收。失败 partial 保留行为与恢复说明维持上文约定。
+- 云端全仓及交叉编译结果直接复用，本地未重跑全仓。保留同基线 `TestAdminRenewalAuth` 与 TestTempDir 夹具记录。Windows 原生 console、UNC / junction / ACL / 文件替换仍待验证，真实 S3 运行及大文件／长时压测未执行。GitHub Actions 当前 disabled，空 check-runs 无法提供 CI 通过证据。
