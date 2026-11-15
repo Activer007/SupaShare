@@ -13,19 +13,19 @@ import (
 func Do(flags flagparser.MigrateFlags) {
 	oldDb, err := database.ParseUrl(flags.Source, true)
 	if err != nil {
-		fmt.Println("Error: " + err.Error())
+		fmt.Fprintln(os.Stderr, "Invalid or unavailable migration source; verify the protected connection input")
 		osExit(1)
 		return
 	}
 	newDb, err := database.ParseUrl(flags.Destination, false)
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Fprintln(os.Stderr, "Invalid or unavailable migration destination; verify the protected connection input")
 		osExit(2)
 		return
 	}
-	fmt.Printf("Migrating %s database %s to %s database %s\n", getType(oldDb.Type), oldDb.HostUrl, getType(newDb.Type), newDb.HostUrl)
+	fmt.Printf("Migrating %s database to %s database\n", getType(oldDb.Type), getType(newDb.Type))
 	if err := database.MigrateChecked(context.Background(), oldDb, newDb); err != nil {
-		fmt.Println("Migration rejected: " + err.Error())
+		fmt.Fprintln(os.Stderr, "Migration rejected; check connectivity, destination emptiness and recovery prerequisites (connection details omitted)")
 		osExit(3)
 		return
 	}

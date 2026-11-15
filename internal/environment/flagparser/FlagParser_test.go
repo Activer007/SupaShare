@@ -168,8 +168,8 @@ func TestShowUsage(t *testing.T) {
 -v, --version                  Show version info
 
 migrate-database               Migrate an old database to a new database (e.g. SQLite to Redis)
---source                       Original database path
---destination                  New database path
+--source-file                  Original database URL in a protected file
+--destination-file             New database URL in a protected file
 `
 
 	test.IsEqualString(t, capturedOutput, expectedOutput)
