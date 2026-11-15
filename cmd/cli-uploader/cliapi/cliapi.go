@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +20,8 @@ import (
 	"github.com/Activer007/SupaShare/internal/encryption/end2end"
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/safedisplay"
+	"github.com/Activer007/SupaShare/internal/serviceurl"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -56,11 +57,14 @@ var ErrE2eNotSetUp = errors.New("e2e has not been set up on the server")
 // Init initialises the API client with the given url and key.
 // The key is used for authentication.
 // The end2endKey is used for end-to-end encryption.
-func Init(url, key string, end2endKey []byte) {
-	gokapiUrl = strings.TrimSuffix(url, "/") + "/api"
-	apiKey = key
-	e2eKey = end2endKey
-
+func Init(rawURL, key string, end2endKey []byte) error {
+	normalized, err := serviceurl.Normalize(rawURL)
+	if err != nil {
+		gokapiUrl, apiKey, e2eKey = "", "", nil
+		return err
+	}
+	gokapiUrl, apiKey, e2eKey = normalized+"/api", key, end2endKey
+	return nil
 }
 
 // GetVersion returns the version of the SupaShare server
@@ -100,6 +104,9 @@ func GetConfig() (int, int, bool, error) {
 	if err != nil {
 		return 0, 0, false, err
 	}
+	if err := validateTransferConfig(parsedResult.MaxFilesize, parsedResult.MaxChunksize); err != nil {
+		return 0, 0, false, err
+	}
 	return parsedResult.MaxFilesize, parsedResult.MaxChunksize, parsedResult.EndToEndEncryptionEnabled, nil
 }
 
@@ -136,7 +143,7 @@ func getUrl(url string, headers []header, longTimeout bool) (string, error) {
 		return "", fmt.Errorf("HTTP status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBoundedBody(resp.Body, maxMetadataBytes)
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +156,7 @@ func UploadFile(uploadParams cliflags.FlagConfig) (models.FileApiOutput, error) 
 	file, err := os.OpenFile(uploadParams.File, os.O_RDONLY, 0664)
 	if err != nil {
 		fmt.Println("ERROR: Could not open file to upload")
-		fmt.Println(err)
+		fmt.Println(safedisplay.Text(err.Error()))
 		os.Exit(4)
 	}
 	defer file.Close()
@@ -165,10 +172,17 @@ func UploadFile(uploadParams cliflags.FlagConfig) (models.FileApiOutput, error) 
 	if err != nil {
 		return models.FileApiOutput{}, err
 	}
+	if !fileStat.Mode().IsRegular() || fileStat.Size() < 0 {
+		return models.FileApiOutput{}, errors.New("upload requires a regular file")
+	}
 	sizeBytes := fileStat.Size()
 	realSize := fileStat.Size()
 	if isE2e {
-		sizeBytes = encryption.CalculateEncryptedFilesize(sizeBytes)
+		encryptedSize := encryption.CalculateEncryptedFilesize(sizeBytes)
+		if encryptedSize < sizeBytes {
+			return models.FileApiOutput{}, ErrFileTooBig
+		}
+		sizeBytes = encryptedSize
 	}
 	if sizeBytes > int64(maxSize)*megaByte {
 		return models.FileApiOutput{}, ErrFileTooBig
@@ -188,8 +202,10 @@ func UploadFile(uploadParams cliflags.FlagConfig) (models.FileApiOutput, error) 
 		if err != nil {
 			return models.FileApiOutput{}, err
 		}
-		for i := int64(0); i < sizeBytes; i = i + (int64(chunkSize) * megaByte) {
-			err = uploadChunk(stream, uuid, i, int64(chunkSize)*megaByte, sizeBytes, progressBar)
+		for i := int64(0); i < sizeBytes; {
+			amount := min(int64(chunkSize)*megaByte, sizeBytes-i)
+			err = uploadChunk(stream, uuid, i, amount, sizeBytes, progressBar)
+			i += amount
 			if err != nil {
 				return models.FileApiOutput{}, err
 			}
@@ -215,8 +231,10 @@ func UploadFile(uploadParams cliflags.FlagConfig) (models.FileApiOutput, error) 
 		return metaData, err
 	}
 
-	for i := int64(0); i < sizeBytes; i = i + (int64(chunkSize) * megaByte) {
-		err = uploadChunk(file, uuid, i, int64(chunkSize)*megaByte, sizeBytes, progressBar)
+	for i := int64(0); i < sizeBytes; {
+		amount := min(int64(chunkSize)*megaByte, sizeBytes-i)
+		err = uploadChunk(file, uuid, i, amount, sizeBytes, progressBar)
+		i += amount
 		if err != nil {
 			return models.FileApiOutput{}, err
 		}
@@ -229,120 +247,116 @@ func UploadFile(uploadParams cliflags.FlagConfig) (models.FileApiOutput, error) 
 }
 
 // DownloadFile downloads a file from the SupaShare server
-func DownloadFile(downloadParams cliflags.FlagConfig) error {
-	var progressBar *progressbar.ProgressBar
-
-	info, err := getFileInfo(downloadParams.DownloadId)
+func DownloadFile(params cliflags.FlagConfig) error {
+	info, err := getFileInfo(params.DownloadId)
 	if err != nil {
-		fmt.Println("ERROR: Could not get file info or file does not exist")
 		return err
 	}
-
-	// For E2E files, retrieve the per-file cipher and real filename
-	var e2eCipher []byte
+	limit := params.MaxDownloadBytes
+	if limit == 0 {
+		limit = cliflags.DefaultMaxDownloadBytes
+	}
+	if limit < 0 || info.SizeBytes < 0 || info.SizeBytes > limit {
+		return errors.New("download exceeds client byte limit or has invalid size")
+	}
+	var cipher []byte
 	if info.IsEndToEndEncrypted {
 		if len(e2eKey) == 0 {
-			return errors.New("file is end-to-end encrypted but no E2E key is configured - please re-run login")
+			return errors.New("E2E key is not configured")
 		}
-		var realName string
-		e2eCipher, realName, err = getE2eCipher(downloadParams.DownloadId)
+		var name string
+		cipher, name, err = getE2eCipher(params.DownloadId)
 		if err != nil {
-			fmt.Println("ERROR: Could not retrieve E2E decryption key for this file")
 			return err
 		}
-		if downloadParams.FileName == "" {
-			info.Name = realName
+		if params.FileName == "" {
+			info.Name = name
 		}
 	}
-
-	if downloadParams.OutputPath == "" {
-		downloadParams.OutputPath = "."
+	if params.OutputPath == "" {
+		params.OutputPath = "."
 	}
-	if downloadParams.FileName == "" {
-		downloadParams.FileName = info.Name
-		downloadParams.FileName = strings.ReplaceAll(downloadParams.FileName, "/", "_")
-		downloadParams.FileName = strings.ReplaceAll(downloadParams.FileName, "\\", "_")
+	if params.FileName == "" {
+		params.FileName = strings.NewReplacer("/", "_", "\\", "_").Replace(info.Name)
 	}
-	filename := filepath.Join(downloadParams.OutputPath, filepath.Base(downloadParams.FileName))
-	exists, err := helper.FileExists(filename)
-	if err != nil {
-		fmt.Println("ERROR: Could not check if file already exists")
+	name := filepath.Base(params.FileName)
+	if name == "." || name == ".." || name == "" {
+		return errors.New("invalid download filename")
+	}
+	if err = os.Mkdir(params.OutputPath, 0700); err != nil && !os.IsExist(err) {
 		return err
 	}
-	if exists {
-		fmt.Println("ERROR: File already exists, please specify a different filename")
-		os.Exit(1)
-	}
-	if !helper.FolderExists(downloadParams.OutputPath) {
-		err = os.Mkdir(downloadParams.OutputPath, 0770)
-		if err != nil {
-			fmt.Println("ERROR: Could not create output directory")
-			return err
-		}
-	}
-
-	req, err := http.NewRequest("GET", gokapiUrl+"/files/download/"+downloadParams.DownloadId, nil)
+	root, err := os.OpenRoot(params.OutputPath)
 	if err != nil {
 		return err
 	}
-	req.Header.Add("apikey", apiKey)
-
-	client := newHTTPClient(0, true)
-	resp, err := client.Do(req)
+	defer root.Close()
+	// Pin the output directory, and never follow or truncate an existing leaf.
+	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println("ERROR: Could not download file: Status code " + strconv.Itoa(resp.StatusCode))
-		os.Exit(4)
-	}
-
-	helper.CreateDir(downloadParams.OutputPath)
-	file, err := os.Create(filename)
-	if err != nil {
-		fmt.Println("ERROR: Could not create new file")
-		return err
+		return errors.New("cannot exclusively create download; choose a new filename")
 	}
 	defer file.Close()
-
-	if !downloadParams.JsonOutput {
-		progressBar = progressbar.DefaultBytes(info.SizeBytes, "Downloading")
+	// Do not unlink by pathname on failure: another directory writer could have
+	// replaced that name. Keep the private partial for explicit user recovery.
+	fail := func(err error) error {
+		return fmt.Errorf("download incomplete; private partial may remain, verify before cleanup: %w", err)
 	}
-
-	// For E2E files, wrap the response body in a decryption reader
-	var body io.Reader = resp.Body
-	if info.IsEndToEndEncrypted {
-		body, err = encryption.GetDecryptReader(e2eCipher, resp.Body)
-		if err != nil {
-			os.Remove(filename)
-			return err
-		}
-	}
-
-	if !downloadParams.JsonOutput {
-		_, err = io.Copy(file, io.TeeReader(body, progressBar))
-	} else {
-		_, err = io.Copy(file, body)
-	}
-
+	req, err := http.NewRequest("GET", gokapiUrl+"/files/download/"+params.DownloadId, nil)
 	if err != nil {
-		os.Remove(filename)
-		fmt.Println("ERROR: Could not download file")
-		return err
+		return fail(err)
 	}
-	if downloadParams.RemoveRemote {
-		err = deleteRemoteFile(downloadParams.DownloadId)
+	req.Header.Add("apikey", apiKey)
+	resp, err := newHTTPClient(30*time.Minute, true).Do(req)
+	if err != nil {
+		return fail(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fail(fmt.Errorf("download HTTP status %d", resp.StatusCode))
+	}
+	if resp.ContentLength >= 0 && resp.ContentLength != info.SizeBytes {
+		return fail(errors.New("download content length does not match metadata"))
+	}
+	wire := &downloadReader{r: resp.Body, remaining: info.SizeBytes}
+	var body io.Reader = wire
+	if info.IsEndToEndEncrypted {
+		body, err = encryption.GetDecryptReader(cipher, wire)
 		if err != nil {
+			return fail(err)
+		}
+	}
+	var output io.Reader = &downloadReader{r: body, remaining: limit}
+	if !params.JsonOutput {
+		bar := progressbar.DefaultBytes(info.SizeBytes, "Downloading")
+		defer bar.Close()
+		output = io.TeeReader(output, bar)
+	}
+	_, err = io.Copy(file, output)
+	if err != nil {
+		return fail(err)
+	}
+	// E2E SizeBytes is ciphertext size; plaintext size is not exposed by this API.
+	// Consume to authenticated EOF and require the exact advertised wire length.
+	if wire.remaining != 0 {
+		return fail(errors.New("download ended before advertised size"))
+	}
+	if err = file.Sync(); err != nil {
+		return fail(err)
+	}
+	if err = file.Close(); err != nil {
+		return fail(err)
+	}
+	if params.RemoveRemote {
+		if err = deleteRemoteFile(params.DownloadId); err != nil {
 			return err
 		}
 	}
-	if !downloadParams.JsonOutput {
-		fmt.Println("File downloaded successfully")
-		fmt.Println("File saved to : " + filename)
-	} else {
+	if params.JsonOutput {
 		fmt.Println("{\"result\":\"OK\"}")
+	} else {
+		fmt.Println("File downloaded successfully")
+		fmt.Println("File saved to : " + safedisplay.Text(filepath.Join(params.OutputPath, name)))
 	}
 	return nil
 }
@@ -391,42 +405,17 @@ func deleteRemoteFile(id string) error {
 }
 
 func uploadChunk(f io.Reader, uuid string, offset, chunkSize, filesize int64, progressBar *progressbar.ProgressBar) error {
-	body := new(bytes.Buffer)
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "uploadedfile")
+	if chunkSize <= 0 || chunkSize > maxChunkBytes || offset < 0 || filesize < 0 || offset >= filesize {
+		return errors.New("invalid upload chunk bounds")
+	}
+	remaining := filesize - offset
+	if remaining < chunkSize {
+		chunkSize = remaining
+	}
+	bodyReader, contentType, dataSize, err := multipartChunk(f, uuid, offset, chunkSize, filesize)
 	if err != nil {
 		return err
 	}
-	buffer, err := io.ReadAll(io.LimitReader(f, chunkSize))
-	if err != nil {
-		return err
-	}
-	_, err = part.Write(buffer)
-	if err != nil {
-		return err
-	}
-
-	err = writer.WriteField("filesize", strconv.FormatInt(filesize, 10))
-	if err != nil {
-		return err
-	}
-	err = writer.WriteField("offset", strconv.FormatInt(offset, 10))
-	if err != nil {
-		return err
-	}
-	err = writer.WriteField("uuid", uuid)
-	if err != nil {
-		return err
-	}
-	err = writer.Close()
-	if err != nil {
-		return err
-	}
-
-	data := body.Bytes()
-	dataSize := int64(len(data))
-	bodyReader := io.Reader(bytes.NewReader(data))
-
 	if progressBar != nil {
 		bodyReader = io.TeeReader(bodyReader, progressBar)
 	}
@@ -436,15 +425,16 @@ func uploadChunk(f io.Reader, uuid string, offset, chunkSize, filesize int64, pr
 		return err
 	}
 	r.ContentLength = dataSize
-	r.Header.Set("Content-Type", writer.FormDataContentType())
+	r.Header.Set("Content-Type", contentType)
 	r.Header.Set("apikey", apiKey)
-	client := newHTTPClient(0, false)
+	client := newHTTPClient(chunkRequestTimeout, false)
 	resp, err := client.Do(r)
 
 	if err != nil {
 		return err
 	}
-	bodyContent, err := io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	bodyContent, err := readBoundedBody(resp.Body, maxChunkResponseBytes)
 	if err != nil {
 		return err
 	}
@@ -453,10 +443,10 @@ func uploadChunk(f io.Reader, uuid string, offset, chunkSize, filesize int64, pr
 		return ErrUnauthorised
 	}
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("failed to upload chunk: status code " + strconv.Itoa(resp.StatusCode) + ", response: " + response)
+		return errors.New("failed to upload chunk: status code " + strconv.Itoa(resp.StatusCode))
 	}
 	if response != "{\"result\":\"OK\"}" {
-		return errors.New("failed to upload chunk: unexpected response: " + response)
+		return errors.New("failed to upload chunk: unexpected response")
 	}
 	return nil
 }
@@ -537,7 +527,11 @@ func acquireE2eLeaseContext(parent context.Context) (string, error) {
 		var response struct {
 			LeaseToken string `json:"leaseToken"`
 		}
-		err = json.NewDecoder(resp.Body).Decode(&response)
+		body, readErr := readBoundedBody(resp.Body, maxLeaseResponseBytes)
+		err = readErr
+		if err == nil {
+			err = json.Unmarshal(body, &response)
+		}
 		resp.Body.Close()
 		if err != nil {
 			return "", err

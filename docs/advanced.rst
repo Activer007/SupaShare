@@ -905,3 +905,20 @@ do not inherit the application page CSP; inline file responses retain their
 separate enforced ``sandbox`` policy. No encryption format or data migration is
 required. Reverting this page policy removes its restrictions without changing
 stored files or keys.
+
+CLI transfer safety
+-------------------
+
+CLI login now displays the canonical service destination and requires ``yes``
+before asking for an API key. Ambiguous URLs (including userinfo, query and
+fragment) are rejected; simple reverse-proxy base paths remain supported.
+
+Downloads use an independent 10 GiB client limit. To approve a different byte
+budget, pass ``--max-download-bytes POSITIVE_INTEGER``. Existing destination
+files are never overwritten. An interrupted download may leave a partial file;
+verify it before manual cleanup, or select a new output name. Remote deletion
+only happens after a verified, synced and closed local download.
+
+Uploads accept server chunk sizes up to 64 MiB. Upload chunks and downloads have
+a 30-minute absolute deadline. Metadata responses are limited to 8 MiB. See
+``docs/security/N08-N09-CLI-BOUNDARIES.md`` for exact limits and compatibility.

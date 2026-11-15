@@ -39,9 +39,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/info/config":
             body = {"MaxFilesize": 100, "MaxChunksize": 10,
                     "EndToEndEncryptionEnabled": self.path.startswith("/e2e/")}
-        elif path in ("/api/e2e/mutex/lock", "/api/e2e/mutex/unlock"):
+        elif path == "/api/e2e/mutex/lock":
+            body = {"leaseToken": "synthetic-pty-lease"}
+        elif path == "/api/e2e/mutex/unlock":
+            assert self.headers.get("e2eLease") == "synthetic-pty-lease"
             body = {}
         elif path == "/api/e2e/get":
+            assert self.headers.get("e2eLease") == "synthetic-pty-lease"
             body = E2E_DATA
         else:
             self.send_error(404)
@@ -131,6 +135,9 @@ def main():
                 try:
                     session.until(b"SupaShare URL:")
                     session.write((origin + ("/e2e" if is_e2e else "") + "\n").encode())
+                    session.until(b"Type yes to continue:")
+                    assert (b"Service destination: " + origin.encode()) in session.output
+                    session.write(b"yes\n")
                     session.until(b"API key (input hidden):")
                     session.hidden()
                     if case == "empty-api":
@@ -166,6 +173,26 @@ def main():
                     else:
                         assert config.read_bytes() == old, "failed login changed prior credentials"
                     print("PASS", case)
+                finally:
+                    session.close()
+            for name, target, answer in (
+                ("deceptive-userinfo", origin.replace("http://", "http://trusted.example@"), None),
+                ("url-query-rejected", origin + "?redirect=elsewhere", None),
+                ("url-fragment-rejected", origin + "#trusted", None),
+                ("destination-declined", origin, b"no\n"),
+            ):
+                old = config.read_bytes()
+                session = Session(binary, config)
+                try:
+                    session.until(b"SupaShare URL:")
+                    session.write((target + "\n").encode())
+                    if answer is not None:
+                        session.until(b"Type yes to continue:")
+                        session.write(answer)
+                    session.finish(answer is not None)
+                    assert b"API key (input hidden):" not in session.output
+                    assert config.read_bytes() == old
+                    print("PASS", name)
                 finally:
                     session.close()
             old = config.read_bytes()

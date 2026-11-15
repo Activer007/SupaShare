@@ -28,22 +28,26 @@ const (
 	ModeInvalid
 )
 
+// DefaultMaxDownloadBytes is a client resource budget, not a server quota.
+const DefaultMaxDownloadBytes int64 = 10 * 1024 * 1024 * 1024
+
 const version = "v1.1.4"
 
 // FlagConfig contains the parameters for the upload command.
 type FlagConfig struct {
-	File            string
-	Directory       string
-	TmpFolder       string
-	FileName        string
-	OutputPath      string
-	DownloadId      string
-	JsonOutput      bool
-	DisableE2e      bool
-	RemoveRemote    bool
-	ExpiryDays      int
-	ExpiryDownloads int
-	Password        string
+	File             string
+	Directory        string
+	TmpFolder        string
+	FileName         string
+	OutputPath       string
+	DownloadId       string
+	JsonOutput       bool
+	DisableE2e       bool
+	RemoveRemote     bool
+	ExpiryDays       int
+	ExpiryDownloads  int
+	Password         string
+	MaxDownloadBytes int64
 }
 
 // Parse parses the command line arguments and returns the mode.
@@ -108,6 +112,13 @@ func GetUploadParameters(mode int) FlagConfig {
 		case "--password-file":
 			_ = getParameter(&i)
 		case "--password-prompt":
+		case "--max-download-bytes":
+			value, err := strconv.ParseInt(getParameter(&i), 10, 64)
+			if err != nil || value <= 0 {
+				fmt.Fprintln(os.Stderr, "Invalid positive download byte limit")
+				os.Exit(2)
+			}
+			result.MaxDownloadBytes = value
 		case "-D":
 			fallthrough
 		case "--directory":
@@ -255,7 +266,7 @@ func GetConfigLocation() ([]string, bool) {
 			fallthrough
 		case "--configuration":
 			return []string{getParameter(&i)}, false
-		case "-p", "--password", "--password-file", "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path":
+		case "--max-download-bytes", "-p", "--password", "--password-file", "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path":
 			// A consumed value is data even when it looks like -c. In
 			// particular a password must never select a credential location.
 			i++
@@ -320,6 +331,7 @@ func printUsage(exitCode int) {
 	fmt.Println("  -n, --name <string>             Change final filename for uploaded file")
 	fmt.Println("  -o, --output <string>           Change the filename of the file to download")
 	fmt.Println("  -k, --output-path <path>        The folder to download the file to (default: current folder)")
+	fmt.Println("      --max-download-bytes <int>  Client download cap in bytes (default 10 GiB)")
 	fmt.Println("  -r, --remove                    Remove remote file after download")
 	fmt.Println("  -t, --tmpfolder <path>          Folder for temporary Zip file when uploading a directory")
 	fmt.Println("  -h, --help                      Show this help message")
@@ -362,7 +374,7 @@ func passwordSource(args []string) (secretinput.Source, error) {
 		case "--password-prompt":
 			count++
 			source.Prompt = true
-		case "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path", "-c", "--configuration":
+		case "--max-download-bytes", "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path", "-c", "--configuration":
 			i++
 		default:
 			if strings.HasPrefix(arg, "--password-prompt=") {
