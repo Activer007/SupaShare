@@ -257,7 +257,7 @@ func TestNewFile(t *testing.T) {
 	test.IsEqualString(t, retrievedFile.PasswordHash, "")
 	test.IsEqualString(t, retrievedFile.Size, "35 B")
 	test.IsEqualInt(t, retrievedFile.DownloadsRemaining, 1)
-	test.IsEqualInt(t, len(retrievedFile.Id), 15)
+	test.IsEqualInt(t, len(retrievedFile.Id), configuration.GetEnvironment().LengthId)
 	test.IsEqualInt(t, int(retrievedFile.ExpireAt), 2147483600)
 	test.IsEqualBool(t, file.UnlimitedTime, false)
 	test.IsEqualBool(t, file.UnlimitedDownloads, false)

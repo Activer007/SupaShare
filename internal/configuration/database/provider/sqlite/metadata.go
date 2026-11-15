@@ -118,6 +118,10 @@ type metadataExecer interface {
 // saveMetaData uses the supplied database or transaction connection. Quota
 // commits must not borrow a second connection from the provider's pool.
 func saveMetaData(ctx context.Context, exec metadataExecer, file models.File) error {
+	return writeMetaData(ctx, exec, file, false)
+}
+
+func writeMetaData(ctx context.Context, exec metadataExecer, file models.File, createOnly bool) error {
 	newData := schemaMetaData{
 		Id:                 file.Id,
 		Name:               file.Name,
@@ -152,7 +156,11 @@ func saveMetaData(ctx context.Context, exec metadataExecer, file models.File) er
 	}
 	newData.Encryption = buf.Bytes()
 
-	_, err = exec.ExecContext(ctx, `INSERT OR REPLACE INTO FileMetaData (Id, Name, Size, SHA1, ExpireAt, SizeBytes,
+	verb := "INSERT OR REPLACE"
+	if createOnly {
+		verb = "INSERT"
+	}
+	_, err = exec.ExecContext(ctx, verb+` INTO FileMetaData (Id, Name, Size, SHA1, ExpireAt, SizeBytes,
                                    DownloadsRemaining, DownloadCount, PasswordHash, HotlinkId, ContentType, AwsBucket, Encryption,
                                    UnlimitedDownloads, UnlimitedTime, UserId, UploadDate, PendingDeletion, UploadRequestId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)`,

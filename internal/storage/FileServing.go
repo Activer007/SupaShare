@@ -93,7 +93,9 @@ func NewFile(fileContent io.Reader, fileHeader *multipart.FileHeader, userId int
 				return models.File{}, err
 			}
 		}
-		database.SaveMetaData(file)
+		if err := publishNewMetadata(&file); err != nil {
+			return models.File{}, err
+		}
 		return file, nil
 	}
 
@@ -110,7 +112,9 @@ func NewFile(fileContent io.Reader, fileHeader *multipart.FileHeader, userId int
 			err = os.Rename(tempFile.Name(), dataDir+"/"+file.SHA1)
 			helper.Check(err)
 			hasBeenRenamed = true
-			database.SaveMetaData(file)
+			if err := publishNewMetadata(&file); err != nil {
+				return models.File{}, err
+			}
 			return file, nil
 		}
 		destinationFile, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
@@ -123,7 +127,9 @@ func NewFile(fileContent io.Reader, fileHeader *multipart.FileHeader, userId int
 			return models.File{}, err
 		}
 	}
-	database.SaveMetaData(file)
+	if err := publishNewMetadata(&file); err != nil {
+		return models.File{}, err
+	}
 	return file, nil
 }
 
@@ -227,7 +233,9 @@ func NewFileFromChunk(chunkId string, fileHeader chunking.FileHeader, userId int
 			return models.File{}, err
 		}
 	}
-	database.SaveMetaData(metaData)
+	if err := publishNewMetadata(&metaData); err != nil {
+		return models.File{}, err
+	}
 	processingstatus.Set(chunkId, processingstatus.StatusFinished, metaData, userId, nil)
 	return metaData, nil
 }
@@ -318,7 +326,7 @@ func encryptChunkFile(file *os.File, metadata *models.File) (*os.File, error) {
 
 func createNewMetaData(hash string, fileHeader chunking.FileHeader, userId int, params models.UploadParameters) models.File {
 	file := buildNewMetaData(createNewId(), hash, fileHeader, userId, params)
-	AddHotlink(&file)
+	setHotlinkCandidate(&file)
 	return file
 }
 
@@ -592,12 +600,41 @@ var videoFileExtensions = []string{".3gp", ".avi", ".flv", ".m4v", ".mkv", ".mov
 // AddHotlink will first check if the file may use a hotlink (e.g. not encrypted or password-protected).
 // If file is an image, it will generate a new hotlink in the database and add it to the parameter file
 // Otherwise no changes will be made
-func AddHotlink(file *models.File) {
+func AddHotlink(file *models.File) error {
 	if !IsAbleHotlink(*file) {
-		return
+		return nil
 	}
-	setHotlinkCandidate(file)
-	database.SaveHotlink(*file)
+	for attempt := 0; attempt < 5; attempt++ {
+		setHotlinkCandidate(file)
+		err := database.ClaimHotlink(*file)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, uploadquota.ErrConflict) {
+			file.HotlinkId = ""
+			return err
+		}
+	}
+	file.HotlinkId = ""
+	return uploadquota.ErrConflict
+}
+
+// Legacy creation entry points also fail closed instead of upserting a collided ID.
+// Retrying creates new capabilities, not new blobs or duplicate quota commits.
+func publishNewMetadata(file *models.File) error {
+	for attempt := 0; attempt < 5; attempt++ {
+		err := database.CreateFileMetadata(*file)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, uploadquota.ErrConflict) {
+			return err
+		}
+		file.Id = createNewId()
+		file.HotlinkId = ""
+		setHotlinkCandidate(file)
+	}
+	return uploadquota.ErrConflict
 }
 
 func setHotlinkCandidate(file *models.File) {

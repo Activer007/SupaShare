@@ -96,9 +96,9 @@ Available environment variables
 +-------------------------------------+----------------------------------------------------------------------------------------+-----------------+-----------------------------+
 | GOKAPI_GUEST_UPLOAD_BY_DEFAULT      | Allows newly created users to create file requests, if set to true                     | No              | true                        |
 +-------------------------------------+----------------------------------------------------------------------------------------+-----------------+-----------------------------+
-| GOKAPI_LENGTH_HOTLINK_ID            | Sets the length of the hotlink IDs. Value must be 8 or greater                         | No              | 40                          |
+| GOKAPI_LENGTH_HOTLINK_ID            | Sets the length of the hotlink IDs. Value must be 22 or greater                        | No              | 40                          |
 +-------------------------------------+----------------------------------------------------------------------------------------+-----------------+-----------------------------+
-| GOKAPI_LENGTH_ID                    | Sets the length of the download IDs. Value must be 5 or greater                        | No              | 15                          |
+| GOKAPI_LENGTH_ID                    | Sets the length of the download IDs. Value must be 22 or greater                       | No              | 22                          |
 +-------------------------------------+----------------------------------------------------------------------------------------+-----------------+-----------------------------+
 | GOKAPI_LOG_STDOUT                   | Also outputs all log file entries to the console output, if set to true                | No              | false                       |
 +-------------------------------------+----------------------------------------------------------------------------------------+-----------------+-----------------------------+

@@ -129,7 +129,10 @@ func apiEditFile(w http.ResponseWriter, r requestParser, user models.User, _ mod
 		database.DeleteHotlink(file.HotlinkId)
 		file.HotlinkId = ""
 	} else if file.HotlinkId == "" && storage.IsAbleHotlink(file) {
-		storage.AddHotlink(&file)
+		if err := storage.AddHotlink(&file); err != nil {
+			sendError(w, http.StatusConflict, errorcodes.InvalidUserInput, "Unable to create a unique hotlink. Retry the edit.")
+			return
+		}
 	}
 
 	database.SaveMetaData(file)
