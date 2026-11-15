@@ -29,6 +29,13 @@ clean. Raw terminal state is restored on normal return and supported
 interrupt/termination paths. SIGKILL and compromised terminals are outside this
 protection. There is no new stdin or environment-variable secret source.
 
+Hidden prompts read the full input up to the same 64 KiB byte limit. Backspace
+removes the preceding UTF-8 character and Ctrl-U clears the line. Ctrl-C and
+Ctrl-D cancel input. Other terminal control input, including cursor escape
+sequences, causes the line to be rejected when Enter is pressed. Oversized and
+unsupported lines are consumed through Enter while echo remains disabled,
+then fail explicitly. No truncated prefix is accepted.
+
 Legacy `-p VALUE` / `--password VALUE` remains compatible, including an explicitly
 empty password; it emits a warning without printing the value. `-p=VALUE` and
 `--password=VALUE` are recognized too. Inline arguments can still appear in shell
