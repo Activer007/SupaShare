@@ -602,6 +602,9 @@ func completePreparedChunk(w http.ResponseWriter, task *fileupload.PreparedCompl
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("recovered panic in completePreparedChunk: %v", r)
+			if !detached && w != nil {
+				http.Error(w, "internal server error during chunk completion", http.StatusInternalServerError)
+			}
 		}
 	}()
 	// Run finishes storage work before returning. Logging still reads the
@@ -1761,10 +1764,20 @@ func isAuthorisedForApi(r *http.Request, routing apiRoute) (models.User, models.
 	if err := r.Context().Err(); err != nil {
 		return models.User{}, models.ApiKey{}, false
 	}
+	ip := logging.GetIpAddress(r)
+	alreadyWaited := false
+	if ratelimiter.IsIpPenalizedForApi(ip) {
+		if err := ratelimiter.WaitOnApiAuthentication(r.Context(), ip); err != nil {
+			return models.User{}, models.ApiKey{}, false
+		}
+		alreadyWaited = true
+	}
 	keyId := r.Header.Get("apikey")
 	user, apiKey, ok := isValidApiKey(keyId, true, routing.ApiPerm)
 	if !ok {
-		_ = ratelimiter.WaitOnApiAuthentication(r.Context(), logging.GetIpAddress(r))
+		if !alreadyWaited {
+			_ = ratelimiter.WaitOnApiAuthentication(r.Context(), ip)
+		}
 		return models.User{}, models.ApiKey{}, false
 	}
 	// Returns false if a public upload key is used for non-public api call or vice versa

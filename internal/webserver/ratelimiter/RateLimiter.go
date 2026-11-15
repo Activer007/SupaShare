@@ -64,6 +64,19 @@ func WaitOnApiAuthentication(ctx context.Context, ip string) error {
 	return failedApiKeyLimiter.Get(ip, 1, 200).WaitN(ctx, 1)
 }
 
+// IsIpPenalizedForApi reports whether an IP has exhausted its failed-attempt burst quota.
+func IsIpPenalizedForApi(ip string) bool {
+	if isUnitTest {
+		return false
+	}
+	failedApiKeyLimiter.mu.Lock()
+	defer failedApiKeyLimiter.mu.Unlock()
+	if e, ok := failedApiKeyLimiter.limiters[ip]; ok {
+		return e.limiter.Tokens() < 1.0
+	}
+	return false
+}
+
 // WaitOnDownloadPassword blocks the current goroutine until the rate limiter allows a request
 // Ten attempts without limiting, thereafter one attempt every 2 seconds
 func WaitOnDownloadPassword(ctx context.Context, ip string) error {
