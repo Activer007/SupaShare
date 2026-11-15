@@ -47,3 +47,12 @@ Windows amd64 / Darwin arm64 的 privatefile 与 CLI 测试包可交叉编译；
 - 修正了缺失 Windows 盘符/UNC 根导致祖先遍历不终止的边界，新增可注入文件状态的 Linux 终止回归，以及 Windows 原生缺失盘符回归。共享原语再次 race 与 Windows 交编通过。
 - Windows amd64 / Darwin arm64 的 privatefile、CLI 测试包交叉编译通过。Linux 生产构建通过；原生平台验证仍按上节保留。
 - `git diff --check` 与干净基线补丁应用检查通过。未创建 PR、未合并、未改变任何实际部署目录权限。
+
+## 本地 macOS 集成验证（2026-11-15）
+
+- 最新 master 为 `4899e290259a68de7dfaae3dfd07c7ae67054899`，PR #112 已合并。补丁为 55373 bytes，SHA256 为 `57b4f201ffcb48182c6cb175ecd6ce32ed98c9f5e220606b9244377ec5b34bcf`，校验匹配后无冲突应用。复用已有干净 worktree，版本沿用 2.18.0。
+- 原生环境为 macOS 15.7 / x86_64，Go 1.26.10 darwin/amd64。全部使用 `/private/tmp/supashare-n06-qa` 内的合成文件及 Go 测试自建数据，真实部署文件与目录权限均保持原状。
+- `TMPDIR=/private/tmp/supashare-n06-qa go test -race ./internal/privatefile ./cmd/cli-uploader/cliconfig -count=1 -v` 通过。Darwin 原生 chmod ACL 场景全部通过，包含继承 reader 在临时文件创建前被拒绝、祖先 delete_child 被拒绝、0600 文件带扩展 reader 时拒读且可安全替换、旧硬链接内容保留、临时文件在写入内容前验证 ACL、deny-only ACL 兼容。共享原语和 CLI 的原子替换、链接、FIFO、父目录、失败保留及临时文件生命周期回归也通过。
+- `TMPDIR=/private/tmp/supashare-n06-qa go test -race -tags=test,noaws ./internal/configuration ./internal/configuration/cloudconfig ./internal/configuration/setup -run 'TestN06|TestSEC010' -count=1 -v` 通过。覆盖主配置安全替换及 dangling symlink、云配置拒绝不安全读取及链接写入、setup 证明生命周期与失败后旧证明清空。
+- 原生生产 server 与 CLI 的 noaws 构建通过。独立启动合成服务时，配置目录带 `everyone allow read,file_inherit,only_inherit` ACL 会以权限错误终止，目录内无 setup 证明或其他文件。主配置为 0644 时启动同样拒绝，合成秘密未出现在输出中，文件内容未变。测试 ACL 已移除。
+- 云端已有 Linux 与交叉编译结果直接复用，未重跑全仓。Windows 原生 UNC / junction / ACL / 替换验证仍待完成；上述 macOS 原生证据仅覆盖本次运行的平台。保留云端 `TestAdminRenewalAuth` 基线失败、TMPDIR 夹具及 setup 全包 race 被系统终止的记录。GitHub Actions 当前 disabled，空 check-runs 无法提供 CI 通过证据。
