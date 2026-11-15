@@ -1,13 +1,14 @@
 package cloudconfig
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/Activer007/SupaShare/internal/environment"
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/privatefile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,7 +24,7 @@ func Load() (CloudConfig, bool) {
 		return loadFromEnv(&env), true
 	}
 	path := env.ConfigDir + "/cloudconfig.yml"
-	exists, err := helper.FileExists(path)
+	exists, err := privatefile.Exists(path)
 	helper.Check(err)
 	if exists {
 		return loadFromFile(path)
@@ -34,33 +35,20 @@ func Load() (CloudConfig, bool) {
 // Write saves the cloudconfig file to the set config path
 func Write(config CloudConfig) error {
 	_, configDir, _, awsConfigPath := environment.GetConfigPaths()
-	helper.CreateDir(configDir)
-	file, err := os.OpenFile(awsConfigPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(config)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	encoder := yaml.NewEncoder(file)
-	err = encoder.Encode(config)
-	if err != nil {
-		return err
-	}
-	return nil
+	return privatefile.Write(awsConfigPath, data)
 }
 
 // Delete removes the cloud config file from the set config path
 func Delete() error {
 	_, _, _, awsConfigPath := environment.GetConfigPaths()
-	exists, err := helper.FileExists(awsConfigPath)
-	helper.Check(err)
-	if exists {
-		err = os.Remove(awsConfigPath)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return privatefile.Remove(awsConfigPath)
 }
 
 func loadFromEnv(env *environment.Environment) CloudConfig {
@@ -76,9 +64,13 @@ func loadFromEnv(env *environment.Environment) CloudConfig {
 
 func loadFromFile(path string) (CloudConfig, bool) {
 	var result CloudConfig
-	file, err := ioutil.ReadFile(path)
+	file, err := privatefile.Read(path)
 	if err != nil {
-		fmt.Println("Warning: Unable to read cloudconfig.yml!")
+		if errors.Is(err, os.ErrNotExist) {
+			return CloudConfig{}, false
+		}
+		// Unsafe/unreadable secret storage must not silently switch backends.
+		helper.Check(fmt.Errorf("refusing unsafe or unreadable cloud configuration: %w", err))
 		return CloudConfig{}, false
 	}
 	err = yaml.Unmarshal(file, &result)

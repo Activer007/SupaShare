@@ -1,6 +1,6 @@
 //go:build windows
 
-package cliconfig
+package privatefile
 
 import (
 	"fmt"
@@ -109,5 +109,19 @@ func platformSecureFile(file *os.File) error {
 	}
 	// The Go file handle is opened for data writes, not WRITE_DAC. The random
 	// exclusive-created name is inside a checked, non-shared directory.
-	return windows.SetNamedSecurityInfo(file.Name(), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+	if err := windows.SetNamedSecurityInfo(file.Name(), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
+		return err
+	}
+	secured, err := windows.GetNamedSecurityInfo(file.Name(), windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	control, _, err := secured.Control()
+	if err != nil {
+		return err
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		return fmt.Errorf("credential DACL is not protected")
+	}
+	return checkWindowsACL(file.Name(), false, false)
 }

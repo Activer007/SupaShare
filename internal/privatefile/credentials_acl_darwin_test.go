@@ -1,6 +1,6 @@
 //go:build darwin
 
-package cliconfig
+package privatefile
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ func addDarwinTestACL(t *testing.T, path, entry string) {
 func TestDarwinInheritedReadersRejectedBeforeTemporaryCreation(t *testing.T) {
 	dir := privateTestDir(t)
 	addDarwinTestACL(t, dir, "everyone allow read,file_inherit,only_inherit")
-	if err := writeCredentials(filepath.Join(dir, "config.json"), []byte("synthetic-only")); err == nil {
+	if err := Write(filepath.Join(dir, "config.json"), []byte("synthetic-only")); err == nil {
 		t.Fatal("credential parent with inherit-only reader was accepted")
 	}
 	entries, err := os.ReadDir(dir)
@@ -42,7 +42,7 @@ func TestDarwinCredentialAncestorCannotGrantReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	addDarwinTestACL(t, dir, "everyone allow delete_child")
-	if err := writeCredentials(path, []byte("new-synthetic-only")); err == nil {
+	if err := Write(path, []byte("new-synthetic-only")); err == nil {
 		t.Fatal("ancestor replacement grant was accepted")
 	}
 	if actual, err := os.ReadFile(path); err != nil || !bytes.Equal(actual, old) {
@@ -62,14 +62,14 @@ func TestDarwinUnsafeOldFileReadRejectedAndReplacedPrivately(t *testing.T) {
 		t.Fatal(err)
 	}
 	addDarwinTestACL(t, alias, "everyone allow read")
-	if _, err := readCredentials(path); err == nil {
+	if _, err := Read(path); err == nil {
 		t.Fatal("0600 mode masked a readable extended ACL")
 	}
 	want := []byte("new-synthetic-only")
-	if err := writeCredentials(path, want); err != nil {
+	if err := Write(path, want); err != nil {
 		t.Fatal(err)
 	}
-	actual, err := readCredentials(path)
+	actual, err := Read(path)
 	if err != nil || !bytes.Equal(actual, want) {
 		t.Fatal("replacement did not create private readable credentials", err)
 	}
@@ -100,10 +100,10 @@ func TestDarwinDenyOnlyACLRemainsSupported(t *testing.T) {
 	addDarwinTestACL(t, dir, "everyone deny delete")
 	path := filepath.Join(dir, "config.json")
 	want := []byte("synthetic-only")
-	if err := writeCredentials(path, want); err != nil {
+	if err := Write(path, want); err != nil {
 		t.Fatal("safe deny-only directory rejected", err)
 	}
-	actual, err := readCredentials(path)
+	actual, err := Read(path)
 	if err != nil || !bytes.Equal(actual, want) {
 		t.Fatal("safe deny-only credential read failed", err)
 	}

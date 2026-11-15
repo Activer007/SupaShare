@@ -35,6 +35,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/i18n"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/privatefile"
 	"github.com/Activer007/SupaShare/internal/storage/filesystem/s3filesystem/aws"
 	"github.com/Activer007/SupaShare/internal/webserver/browseraccess"
 	"github.com/Activer007/SupaShare/internal/webserver/ratelimiter"
@@ -100,32 +101,25 @@ func runConfigModification(listen setupListenerFactory) {
 // prepareSetupCredentials creates a fresh, process-local proof. Only its path
 // is printed; the password must not enter container/service logs or URLs.
 func prepareSetupCredentials() error {
+	// A failed refresh must never leave an earlier proof active in memory.
+	credentialUsername, credentialPassword, credentialAWSTest, credentialFile = "", "", "", ""
 	dir := environment.New().ConfigDir
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".setup-credential-")
+	password := helper.GenerateRandomString(32)
+	path, err := privatefile.CreateTemp(dir, ".setup-credential-", []byte(password+"\n"))
 	if err != nil {
 		return err
 	}
-	password := helper.GenerateRandomString(32)
-	if _, err = io.WriteString(f, password+"\n"); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return err
-	}
-	if err = f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return err
-	}
 	credentialUsername, credentialPassword = "setup", password
-	credentialAWSTest, credentialFile = password, f.Name()
+	credentialAWSTest, credentialFile = password, path
 	setupComplete.Store(false)
 	return nil
 }
 
 func removeSetupCredential() {
-	if err := os.Remove(credentialFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := privatefile.Remove(credentialFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("Unable to remove expired setup credential file: %v", err)
 	}
 }

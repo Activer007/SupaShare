@@ -5,6 +5,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/test"
 	"github.com/Activer007/SupaShare/internal/test/testconfiguration"
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -82,7 +83,14 @@ func TestWrite(t *testing.T) {
 	err = os.Chmod("test/cloudconfig.yml", 0000)
 	test.IsNil(t, err)
 	err = Write(config)
-	test.IsNotNil(t, err)
+	// Atomic replacement writes a fresh protected inode, rather than opening
+	// the old unreadable inode for truncation.
+	test.IsNil(t, err)
+	info, statErr := os.Stat("test/cloudconfig.yml")
+	test.IsNil(t, statErr)
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatal("cloud replacement not private")
+	}
 }
 
 func TestDelete(t *testing.T) {

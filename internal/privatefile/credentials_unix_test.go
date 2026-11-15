@@ -1,6 +1,6 @@
 //go:build linux || darwin || freebsd || openbsd || netbsd || dragonfly
 
-package cliconfig
+package privatefile
 
 import (
 	"os"
@@ -14,10 +14,10 @@ func TestCredentialsRejectFIFO(t *testing.T) {
 	if err := syscall.Mkfifo(path, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(path, []byte("synthetic")); err == nil {
+	if err := Write(path, []byte("synthetic")); err == nil {
 		t.Fatal("FIFO accepted")
 	}
-	if _, err := readCredentials(path); err == nil {
+	if _, err := Read(path); err == nil {
 		t.Fatal("FIFO accepted")
 	}
 }

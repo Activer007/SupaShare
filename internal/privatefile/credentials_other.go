@@ -1,6 +1,6 @@
 //go:build !windows && !linux && !darwin && !freebsd && !openbsd && !netbsd && !dragonfly
 
-package cliconfig
+package privatefile
 
 import (
 	"fmt"
