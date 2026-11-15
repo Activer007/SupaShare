@@ -15,6 +15,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/configuration/database"
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/privatefile"
 	"github.com/Activer007/SupaShare/internal/storage/filesystem"
 	"github.com/Activer007/SupaShare/internal/storage/filesystem/s3filesystem/aws"
 	"github.com/Activer007/SupaShare/internal/storage/processingstatus/pstatusdb"
@@ -33,7 +34,7 @@ const (
 func SetDirEnv() {
 	os.Setenv("GOKAPI_CONFIG_DIR", baseDir)
 	os.Setenv("GOKAPI_DATA_DIR", dataDir)
-	err := os.MkdirAll(baseDir, 0777)
+	err := os.MkdirAll(baseDir, 0700)
 	if err != nil {
 		panic(err)
 	}
@@ -46,7 +47,7 @@ func SetDirEnv() {
 // Create creates a configuration for unit testing. If initFiles is set, test metaData and content is created
 func Create(initFiles bool) {
 	SetDirEnv()
-	err := os.WriteFile(configFile, configTestFile, 0777)
+	err := privatefile.Write(configFile, configTestFile)
 	if err != nil {
 		panic(err)
 	}
@@ -151,9 +152,9 @@ func WriteSslCertificates(valid bool) {
 func WriteCloudConfigFile(valid bool) {
 	os.Mkdir(baseDir, 0777)
 	if valid {
-		os.WriteFile(baseDir+"/cloudconfig.yml", cloudConfigTestFile, 0700)
+		helper.Check(privatefile.Write(baseDir+"/cloudconfig.yml", cloudConfigTestFile))
 	} else {
-		os.WriteFile(baseDir+"/cloudconfig.yml", []byte("invalid"), 0700)
+		helper.Check(privatefile.Write(baseDir+"/cloudconfig.yml", []byte("invalid")))
 	}
 }
 

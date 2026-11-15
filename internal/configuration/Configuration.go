@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/logging"
 	"github.com/Activer007/SupaShare/internal/models"
+	"github.com/Activer007/SupaShare/internal/privatefile"
 	"github.com/Activer007/SupaShare/internal/storage/filesystem"
 	"golang.org/x/crypto/argon2"
 )
@@ -38,24 +38,20 @@ var usesHttps bool
 // Exists returns true if configuration files are present
 func Exists() bool {
 	configPath, _, _, _ := environment.GetConfigPaths()
-	exists, err := helper.FileExists(configPath)
+	exists, err := privatefile.Exists(configPath)
 	helper.Check(err)
 	return exists
 }
 
 // loadFromFile parses the given file and adds salts, if they are invalid
 func loadFromFile(path string) (models.Configuration, error) {
-	file, err := os.Open(path)
+	data, err := privatefile.Read(path)
 	if err != nil {
 		return models.Configuration{}, err
 	}
-	decoder := json.NewDecoder(file)
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	settings := models.Configuration{}
 	err = decoder.Decode(&settings)
-	if err != nil {
-		return models.Configuration{}, err
-	}
-	err = file.Close()
 	if err != nil {
 		return models.Configuration{}, err
 	}
@@ -122,25 +118,21 @@ func Get() *models.Configuration {
 
 // Save the configuration as a json file
 func save() {
-	file, err := os.OpenFile(parsedEnvironment.ConfigPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
+	if err := saveToFile(parsedEnvironment.ConfigPath, serverSettings); err != nil {
 		fmt.Println("Error writing configuration:", err)
 		os.Exit(1)
 	}
-	defer file.Close()
+}
 
-	_, err = io.Copy(file, bytes.NewReader(serverSettings.ToJson()))
-	if err != nil {
-		fmt.Println("Error writing configuration:", err)
-		os.Exit(1)
-	}
+func saveToFile(path string, settings models.Configuration) error {
+	return privatefile.Write(path, settings.ToJson())
 }
 
 // LoadFromSetup creates a new configuration file after a user completed the setup. If cloudConfig is not nil, a new
 // cloud config file is created. If it is nil an existing cloud config file will be deleted.
 func LoadFromSetup(config models.Configuration, cloudConfig *cloudconfig.CloudConfig, e2eConfig End2EndReconfigParameters, passwordHash string) {
 	parsedEnvironment = environment.New()
-	helper.CreateDir(parsedEnvironment.ConfigDir)
+	helper.Check(os.MkdirAll(parsedEnvironment.ConfigDir, 0700))
 
 	serverSettings = config
 	if cloudConfig != nil {

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package cliconfig
+package privatefile
 
 import (
 	"encoding/binary"

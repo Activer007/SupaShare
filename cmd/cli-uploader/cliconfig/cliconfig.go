@@ -176,20 +176,5 @@ func Load() {
 // Delete deletes the login information file.
 // It will return an error if the file exists but could not be deleted.
 func Delete() error {
-	root, name, err := credentialRoot(getConfigPath(), false)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	if err := checkCredential(root, name, false); err != nil {
-		return err
-	}
-	err = root.Remove(name)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
+	return deleteCredentials(getConfigPath())
 }

@@ -1,6 +1,6 @@
 //go:build linux || freebsd || openbsd || netbsd || dragonfly
 
-package cliconfig
+package privatefile
 
 import "os"
 
