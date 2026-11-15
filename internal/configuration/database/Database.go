@@ -753,3 +753,9 @@ func UpdateUserProfile(expected models.User, updated models.User) (bool, error) 
 func CreateTemporaryApiKey(key models.ApiKey) (bool, error) {
 	return db.CreateTemporaryApiKey(key)
 }
+
+// ClaimHotlink never replaces an existing capability mapping.
+func ClaimHotlink(file models.File) error { return db.ClaimHotlink(file) }
+
+// CreateFileMetadata atomically creates a new file and optional hotlink.
+func CreateFileMetadata(file models.File) error { return db.CreateFileMetadata(file) }

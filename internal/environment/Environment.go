@@ -18,8 +18,11 @@ import (
 const DefaultPort = 53842
 
 // MinLengthId is the minimum character length for download and file request IDs
-// The value is hardcoded in Environment and needs to be kept in sync with this value.
+// Legacy links remain readable; this is not the generation floor.
 const MinLengthId = 5
+
+// MinGeneratedIdLength provides over 128 bits with the 62-character alphabet.
+const MinGeneratedIdLength = 22
 
 // Environment is a struct containing available env variables
 type Environment struct {
@@ -40,9 +43,9 @@ type Environment struct {
 	// Sets the size of chunks that are uploaded in MB
 	ChunkSizeMB int `env:"CHUNK_SIZE_MB" envDefault:"45" onlyPositive:"true" persistent:"true"`
 	// Sets the length of the download IDs
-	LengthId int `env:"LENGTH_ID" envDefault:"15" minValue:"5"`
+	LengthId int `env:"LENGTH_ID" envDefault:"22" minValue:"22"`
 	// Sets the length of the hotlink IDs
-	LengthHotlinkId int `env:"LENGTH_HOTLINK_ID" envDefault:"40" minValue:"8"`
+	LengthHotlinkId int `env:"LENGTH_HOTLINK_ID" envDefault:"40" minValue:"22"`
 	// Also outputs all log file entries to the console output, if set to true
 	LogToStdout bool `env:"LOG_STDOUT" envDefault:"false"`
 	// Sets the maximum allowed file size in MB
@@ -412,11 +415,11 @@ func parseFlags(result Environment) Environment {
 		err := os.Setenv("TMPDIR", result.DataDir)
 		helper.Check(err)
 	}
-	if result.LengthId < 5 {
-		result.LengthId = 5
+	if result.LengthId < MinGeneratedIdLength {
+		result.LengthId = MinGeneratedIdLength
 	}
-	if result.LengthHotlinkId < 8 {
-		result.LengthHotlinkId = 8
+	if result.LengthHotlinkId < MinGeneratedIdLength {
+		result.LengthHotlinkId = MinGeneratedIdLength
 	}
 	if result.MaxMemory < 5 {
 		result.MaxMemory = 5

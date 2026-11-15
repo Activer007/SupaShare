@@ -774,6 +774,9 @@ func showHotlink(w http.ResponseWriter, r *http.Request) {
 	addNoCacheHeader(w)
 	file, ok := storage.GetFileByHotlink(hotlinkId)
 	if !ok || file.IsFileRequest() {
+		if err := ratelimiter.WaitOnFailedId(r); err != nil {
+			return
+		}
 		w.Header().Set("Content-Type", "image/svg+xml")
 		_, _ = w.Write(imageExpiredPicture)
 		return

@@ -103,6 +103,8 @@ type Database interface {
 	GetAllHotlinks() []string
 	// SaveHotlink stores the hotlink associated with the file in the database
 	SaveHotlink(file models.File)
+	ClaimHotlink(file models.File) error
+	CreateFileMetadata(file models.File) error
 	// DeleteHotlink deletes a hotlink with the given hotlink ID
 	DeleteHotlink(id string)
 
