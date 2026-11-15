@@ -16,6 +16,10 @@ const (
 	MaxIDLength             = 128
 	MaxLifetime       int64 = 24 * 60 * 60
 	ReceiptLifetime   int64 = 24 * 60 * 60
+	UnboundLifetime   int64 = 5 * 60
+	ProgressLifetime  int64 = 15 * 60
+	ReserveWindow     int64 = 60
+	ReserveBurst            = 6
 )
 
 var (
@@ -86,6 +90,7 @@ type Action string
 const (
 	Reserve           Action = "reserve"
 	Bind              Action = "bind"
+	Progress          Action = "progress"
 	Claim             Action = "claim"
 	Commit            Action = "commit"
 	Abort             Action = "abort"
@@ -108,6 +113,10 @@ type Change struct {
 	Terminal           State
 	CleanupConfirmed   bool
 	CheckRequestPolicy bool
+	// PublicChunkAdmission enables the server-generated no-body reservation guard.
+	PublicChunkAdmission bool
+	// ReceiveStartedAt is trusted in-process bounded reception evidence, never client input.
+	ReceiveStartedAt int64
 	// DetachCollection permits only a collection-to-ordinary metadata duplicate.
 	// It does not alter the source or create another File Request charge.
 	DetachCollection bool
@@ -131,4 +140,22 @@ func (ledger Ledger) HasOutstanding() bool {
 		}
 	}
 	return false
+}
+
+// EffectiveExpiry also bounds pre-upgrade, no-body File Request reservations.
+// Persisted uploading/claimed records retain their established expiry.
+func EffectiveExpiry(r Reservation) int64 {
+	if r.RequestID != "" && r.InitiallyUnbound && !r.BytesKnown {
+		return min(r.ExpiresAt, r.CreatedAt+UnboundLifetime)
+	}
+	return r.ExpiresAt
+}
+
+// ReceiveLifetime is the absolute body reception allowance, not a durable lease.
+const ReceiveLifetime int64 = 2 * 60 * 60
+
+// ReceptionValid accepts a previously valid lease only for one already started,
+// bounded body reception. It cannot resurrect a terminal record or exceed 24h.
+func ReceptionValid(r Reservation, started, now int64) bool {
+	return r.RequestID != "" && started >= r.CreatedAt && started < EffectiveExpiry(r) && started <= now && now-started < ReceiveLifetime && now < r.CreatedAt+MaxLifetime
 }

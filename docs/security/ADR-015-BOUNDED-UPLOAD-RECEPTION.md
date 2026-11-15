@@ -1,5 +1,7 @@
 # ADR-015：稳定上传 ID 之前的有界接收
 
+> 后续修订：[Group E 上传进展预算](GROUP-E-UPLOAD-PROGRESS.md) 更新公开预约期限、正文读截止及主体公平限制；以下保留原阶段决策与证据。
+
 状态：IMPLEMENTED，验收以 TEST-REPORT 和 PR checks 为准。基线 f4ce5db，2026-10-29；单进程、一个可信本地 DataDir，面向个人 VPS / 小团队。
 
 ## 决策与不变量

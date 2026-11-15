@@ -138,15 +138,15 @@ func TestSEC030ReceiveBodyAdmission(t *testing.T) {
 					switch id % 3 {
 					case 0:
 						request.URL.Path = "/api/files/add"
-						err = ProcessCompleteFile(httptest.NewRecorder(), request, 9130, configuration.Get().MaxMemory)
+						err = ProcessCompleteFile(httptest.NewRecorder(), request, 9130+id, configuration.Get().MaxMemory)
 					case 1:
-						_, err = ProcessNewChunk(httptest.NewRecorder(), request, true, "", 9130, 1024*1024)
+						_, err = ProcessNewChunk(httptest.NewRecorder(), request, true, "", 9130+id, 1024*1024)
 					case 2:
 						// This is a pre-parse resource test, not an authentication
 						// shortcut: EOF prevents reaching any reservation operation.
 						// Real request/Key authentication remains in route tests.
 						request.URL.Path = "/api/uploadrequest/chunk/add"
-						_, err = ProcessNewChunk(httptest.NewRecorder(), request, true, "sec030-synthetic-request", 9130, 1024*1024)
+						_, err = ProcessNewChunk(httptest.NewRecorder(), request, true, "sec030-synthetic-request-"+strconv.Itoa(id), 9130+id, 1024*1024)
 					}
 					events <- sec030ReceiveEvent{id: id, err: err}
 				}(i, body)
@@ -394,7 +394,7 @@ func sec030ReceiveFourAvailable(t *testing.T) {
 		go func(id int) {
 			defer workers.Done()
 			body := &sec030ReceiveGateBody{id: id, events: events, release: release}
-			_, err := ProcessNewChunk(httptest.NewRecorder(), sec030ReceiveEmptyRequest(context.Background(), body), true, "", 9130, 1024*1024)
+			_, err := ProcessNewChunk(httptest.NewRecorder(), sec030ReceiveEmptyRequest(context.Background(), body), true, "", 9130+id, 1024*1024)
 			events <- sec030ReceiveEvent{id: id, err: err}
 		}(i)
 	}
@@ -602,7 +602,7 @@ func TestSEC030ReceiveBusyHTTPDoesNotDrain(t *testing.T) {
 			defer workers.Done()
 			body := &sec030ReceiveGateBody{id: id, events: events, release: release}
 			request := sec030ReceiveEmptyRequest(context.Background(), body)
-			_, err := ProcessNewChunk(httptest.NewRecorder(), request, true, "", 9130, 1024*1024)
+			_, err := ProcessNewChunk(httptest.NewRecorder(), request, true, "", 9130+id, 1024*1024)
 			events <- sec030ReceiveEvent{id: id, err: err}
 		}(id)
 	}

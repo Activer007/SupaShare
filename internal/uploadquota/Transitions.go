@@ -31,7 +31,11 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 	}
 	if change.Action == Reserve {
 		for id, record := range next.Records {
-			if !isActive(record) && record.StagingReleased && change.Now >= record.FinishedAt && change.Now-record.FinishedAt >= ReceiptLifetime {
+			retention := ReceiptLifetime
+			if record.RequestID != "" && record.InitiallyUnbound && !record.BytesKnown {
+				retention = UnboundLifetime
+			}
+			if !isActive(record) && record.StagingReleased && change.Now >= record.FinishedAt && change.Now-record.FinishedAt >= retention {
 				delete(next.Records, id)
 			}
 		}
@@ -51,13 +55,35 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 			} else if !change.Upload.BytesKnown || r.Bytes != change.Upload.Bytes || r.StagingBytes != change.Upload.StagingBytes {
 				return rejected(ErrConflict)
 			}
-			if isActive(r) && r.ExpiresAt <= change.Now {
+			if isActive(r) && EffectiveExpiry(r) <= change.Now {
 				return rejected(ErrExpired)
 			}
 			return next, r, nil, nil
 		}
 		if !validDeclaration(change.Upload) || change.Upload.ExpiresAt <= change.Now || change.Upload.ExpiresAt-change.Now > MaxLifetime {
 			return rejected(ErrInvalid)
+		}
+		if change.PublicChunkAdmission {
+			if change.Upload.RequestID == "" || change.Upload.BytesKnown || change.Upload.ExpiresAt != change.Now+UnboundLifetime {
+				return rejected(ErrInvalid)
+			}
+			starts, pending := 0, 0
+			for _, record := range next.Records {
+				if record.RequestID != change.Upload.RequestID {
+					continue
+				}
+				if record.InitiallyUnbound && record.CreatedAt > change.Now-ReserveWindow {
+					starts++
+				}
+				// Binding a declaration or replaying bytes is not progress. Only
+				// a successfully persisted new chunk extends the initial lease.
+				if isActive(record) && record.InitiallyUnbound && EffectiveExpiry(record) <= record.CreatedAt+UnboundLifetime {
+					pending++
+				}
+			}
+			if starts >= ReserveBurst || pending >= 1 {
+				return rejected(ErrActive)
+			}
 		}
 		if len(next.Records) >= MaxRecords {
 			return rejected(ErrFull)
@@ -88,7 +114,7 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 		if !isActive(r) || r.Completing {
 			return rejected(ErrConflict)
 		}
-		if r.ExpiresAt <= change.Now {
+		if EffectiveExpiry(r) <= change.Now && !ReceptionValid(r, change.ReceiveStartedAt, change.Now) {
 			return rejected(ErrExpired)
 		}
 		if !validDeclaration(change.Upload) || !change.Upload.BytesKnown {
@@ -97,7 +123,23 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 		if r.BytesKnown && (r.Bytes != change.Upload.Bytes || r.StagingBytes != change.Upload.StagingBytes) {
 			return rejected(ErrConflict)
 		}
+		r.ExpiresAt = EffectiveExpiry(r)
 		r.BytesKnown, r.Bytes, r.StagingBytes, r.State = true, change.Upload.Bytes, change.Upload.StagingBytes, Uploading
+		if err := checkCapacity(next, files, r, change.Limits); err != nil {
+			return rejected(err)
+		}
+	case Progress:
+		if !exists {
+			return rejected(ErrNotFound)
+		}
+		if !isActive(r) || r.Completing || !r.BytesKnown || r.RequestID == "" || r.Bytes <= 0 {
+			return rejected(ErrConflict)
+		}
+		if EffectiveExpiry(r) <= change.Now && !ReceptionValid(r, change.ReceiveStartedAt, change.Now) {
+			return rejected(ErrExpired)
+		}
+		// Trusted caller invokes this only after durable, non-empty new bytes.
+		r.ExpiresAt = min(r.CreatedAt+MaxLifetime, max(r.ExpiresAt, change.Now+ProgressLifetime))
 		if err := checkCapacity(next, files, r, change.Limits); err != nil {
 			return rejected(err)
 		}
@@ -114,7 +156,7 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 		if !isActive(r) || !r.BytesKnown {
 			return rejected(ErrConflict)
 		}
-		if r.ExpiresAt <= change.Now {
+		if EffectiveExpiry(r) <= change.Now {
 			return rejected(ErrExpired)
 		}
 		if r.Completing {
@@ -135,6 +177,11 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 			if id != r.ID && record.FileID == change.FileID {
 				return rejected(ErrConflict)
 			}
+		}
+		// Complete coverage has been verified by the chunk store. Preserve
+		// the original bounded processing allowance once publication is claimed.
+		if r.RequestID != "" {
+			r.ExpiresAt = r.CreatedAt + MaxLifetime
 		}
 		r.Completing, r.FileID, r.State = true, change.FileID, Uploading
 	case Commit:
@@ -157,7 +204,7 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 		if !isActive(r) || !r.Completing || !r.BytesKnown {
 			return rejected(ErrConflict)
 		}
-		if r.ExpiresAt <= change.Now {
+		if EffectiveExpiry(r) <= change.Now {
 			return rejected(ErrExpired)
 		}
 		if _, ok := files[r.FileID]; ok {
@@ -182,6 +229,9 @@ func Apply(ledger Ledger, files map[string]models.File, change Change) (Ledger, 
 		}
 		if !isActive(r) {
 			return rejected(ErrConflict)
+		}
+		if change.Terminal == Expired {
+			r.ExpiresAt = EffectiveExpiry(r)
 		}
 		if change.Terminal == Expired && change.Now < r.ExpiresAt {
 			return rejected(ErrConflict)

@@ -44,6 +44,7 @@ type Store struct {
 	initialized bool
 	gates       map[string]*gate
 	uncertain   map[string]error
+	receptions  map[*reception]bool
 }
 
 // New takes the configured DataDir. One Store must be reused for that DataDir
@@ -68,6 +69,10 @@ func (s *Store) Reserve(ctx context.Context, scope Scope, limits uploadquota.Lim
 	if scope.RequestID == "" {
 		return uploadquota.Reservation{}, uploadquota.ErrInvalid
 	}
+	// Reclaim this capability's expired sessions at admission, not one hour later.
+	if err := s.sweep(ctx, scope.RequestID, true); err != nil {
+		return uploadquota.Reservation{}, err
+	}
 	release, err := s.acquire(ctx, ID(scope), false)
 	if err != nil {
 		return uploadquota.Reservation{}, err
@@ -77,7 +82,7 @@ func (s *Store) Reserve(ctx context.Context, scope Scope, limits uploadquota.Lim
 		return uploadquota.Reservation{}, err
 	}
 	now := s.now()
-	return s.apply(ctx, uploadquota.Change{Action: uploadquota.Reserve, Upload: uploadquota.Reservation{ID: ID(scope), UserID: scope.UserID, RequestID: scope.RequestID, ExpiresAt: now + uploadquota.MaxLifetime}, Now: now, Limits: limits, CheckRequestPolicy: true})
+	return s.apply(ctx, uploadquota.Change{Action: uploadquota.Reserve, Upload: uploadquota.Reservation{ID: ID(scope), UserID: scope.UserID, RequestID: scope.RequestID, ExpiresAt: now + uploadquota.UnboundLifetime}, Now: now, Limits: limits, CheckRequestPolicy: true, PublicChunkAdmission: true})
 }
 
 func (s *Store) Write(ctx context.Context, scope Scope, info chunking.ChunkInfo, input io.Reader, payloadBytes, maxFileBytes int64, limits uploadquota.Limits) (uploadquota.Reservation, error) {
@@ -113,14 +118,19 @@ func (s *Store) Write(ctx context.Context, scope Scope, info chunking.ChunkInfo,
 			return r, err
 		}
 	}
-	if err := writable(r, s.now()); err != nil {
+	started := s.receiveStarted(ctx, id)
+	checkAt := s.now()
+	if uploadquota.ReceptionValid(r, started, checkAt) {
+		checkAt = started
+	}
+	if err := writable(r, checkAt); err != nil {
 		return r, err
 	}
 	if r.BytesKnown && (r.Bytes != total || r.StagingBytes != declaration.StagingBytes) {
 		return r, uploadquota.ErrConflict
 	}
 	// Recheck current request policy and aggregate limits even on a retry.
-	r, err = s.apply(ctx, uploadquota.Change{Action: uploadquota.Bind, Upload: declaration, Limits: limits, Now: s.now(), CheckRequestPolicy: scope.RequestID != ""})
+	r, err = s.apply(ctx, uploadquota.Change{Action: uploadquota.Bind, ReceiveStartedAt: started, Upload: declaration, Limits: limits, Now: s.now(), CheckRequestPolicy: scope.RequestID != ""})
 	if err != nil {
 		return r, err
 	}
@@ -174,6 +184,9 @@ func (s *Store) Write(ctx context.Context, scope Scope, info chunking.ChunkInfo,
 	}
 	if err := s.saveProgress(id, m); err != nil {
 		return r, err
+	}
+	if scope.RequestID != "" && payloadBytes > 0 {
+		return s.apply(ctx, uploadquota.Change{Action: uploadquota.Progress, ReceiveStartedAt: started, Upload: r, Limits: limits, Now: s.now(), CheckRequestPolicy: true})
 	}
 	return r, nil
 }
@@ -302,7 +315,9 @@ func (s *Store) cancelRecord(ctx context.Context, scope Scope) (uploadquota.Rese
 
 // Sweep only cleans unclaimed expired chunk sessions. Missing payload is never
 // evidence that an uncertain publication or Commit has been cleaned up.
-func (s *Store) Sweep(ctx context.Context) error {
+func (s *Store) Sweep(ctx context.Context) error { return s.sweep(ctx, "", false) }
+
+func (s *Store) sweep(ctx context.Context, requestID string, try bool) error {
 	if ctx == nil {
 		return uploadquota.ErrInvalid
 	}
@@ -318,18 +333,25 @@ func (s *Store) Sweep(ctx context.Context) error {
 	}
 	var result error
 	for id, r := range ledger.Records {
-		if !strings.HasPrefix(id, "chunk.") || r.Completing || r.ExpiresAt > s.now() || (r.State != uploadquota.Reserved && r.State != uploadquota.Uploading) {
+		if (requestID != "" && r.RequestID != requestID) || !strings.HasPrefix(id, "chunk.") || r.Completing || uploadquota.EffectiveExpiry(r) > s.now() || (r.State != uploadquota.Reserved && r.State != uploadquota.Uploading) {
 			continue
 		}
-		release, err := s.acquire(ctx, id, false)
+		release, err := s.acquire(ctx, id, try)
+		if try && errors.Is(err, uploadquota.ErrInProgress) {
+			continue
+		}
 		if err != nil {
 			result = errors.Join(result, err)
+			continue
+		}
+		if s.receiving(id) {
+			release()
 			continue
 		}
 		current, readErr := s.read(ctx)
 		if readErr != nil {
 			result = errors.Join(result, readErr)
-		} else if r, ok := current.Records[id]; ok && !r.Completing && r.ExpiresAt <= s.now() && (r.State == uploadquota.Reserved || r.State == uploadquota.Uploading) {
+		} else if r, ok := current.Records[id]; ok && !r.Completing && uploadquota.EffectiveExpiry(r) <= s.now() && (r.State == uploadquota.Reserved || r.State == uploadquota.Uploading) {
 			result = errors.Join(result, s.abort(ctx, r, uploadquota.Expired))
 		}
 		release()
@@ -367,7 +389,7 @@ func writable(r uploadquota.Reservation, now int64) error {
 	if r.State != uploadquota.Reserved && r.State != uploadquota.Uploading {
 		return uploadquota.ErrConflict
 	}
-	if r.ExpiresAt <= now {
+	if uploadquota.EffectiveExpiry(r) <= now {
 		return uploadquota.ErrExpired
 	}
 	return nil
