@@ -125,7 +125,17 @@ func randomBytes() []byte {
 }
 
 // Read refuses unsafe files and directories before reading secret bytes.
-func Read(path string) ([]byte, error) {
+func Read(path string) ([]byte, error) { return read(path, 0) }
+
+// ReadLimit enforces a positive byte cap while retaining Read's safety checks.
+func ReadLimit(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 || maxBytes == int64(^uint64(0)>>1) {
+		return nil, fmt.Errorf("invalid private file limit")
+	}
+	return read(path, maxBytes)
+}
+
+func read(path string, maxBytes int64) ([]byte, error) {
 	root, name, err := credentialRoot(path)
 	if err != nil {
 		return nil, err
@@ -149,6 +159,16 @@ func Read(path string) ([]byte, error) {
 	}
 	if !os.SameFile(before, after) {
 		return nil, fmt.Errorf("credential file changed while opening")
+	}
+	if maxBytes > 0 {
+		data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) > maxBytes {
+			return nil, fmt.Errorf("private file exceeds size limit")
+		}
+		return data, nil
 	}
 	return io.ReadAll(f)
 }

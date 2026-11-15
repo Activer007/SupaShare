@@ -409,7 +409,7 @@ func enforceIntLimits(result *Environment) error {
 }
 
 func parseFlags(result Environment) Environment {
-	flags := flagparser.ParseFlags()
+	flags := flagparser.ParseEnvironmentFlags()
 	if flags.IsPortSet {
 		if flags.Port < 1 {
 			flags.Port = DefaultPort

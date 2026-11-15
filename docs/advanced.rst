@@ -233,14 +233,18 @@ To switch to a different database, SupaShare provides a migration tool. By runni
 
 ::
 
- gokapi migrate-database --source [old Database URL] --destination [new Database URL]
+ gokapi migrate-database --source-file /secure/source-url --destination-file /secure/destination-url
+
+Private input files must be regular, service-owned files with owner-only protection (typically Unix 0600), inside trusted real directories. Container secrets must meet those protections too; default world-readable or symlink-backed mounts are not automatically safe. Provision them through a secret manager or protected editor, not a shell command containing the secret. Each file contains one value; one final LF/CRLF is removed, other whitespace is preserved, and the maximum size is 64 KiB.
+
+Interactive alternatives are ``--source-prompt`` and ``--destination-prompt``. Prompts require a real terminal and never fall back to echoed or redirected input. Choose only one source per value. Legacy ``--source``, ``--destination``, ``--deployment-password`` and uploader ``--password/-p`` remain compatible but emit a deprecation warning: argv values can remain visible in process listings, history and deployment metadata. The warning cannot undo that exposure. File paths, but not their contents, remain in argv.
 
 all existing data, except for user sessions, will be transferred to the new database. After the migration, you will need to rerun the setup and specify the new database location. For details on the correct database URL format, refer to the section :ref:`databaseUrl`.
 
 For Docker users, the command is:
 ::
 
- docker run --rm -v gokapi-data:/app/data supashare:local /app/run.sh migrate-database --source [old Database URL] --destination [new Database URL]
+ docker run --rm -v gokapi-data:/app/data -v /secure/secrets:/run/secrets:ro supashare:local /app/run.sh migrate-database --source-file /run/secrets/source-url --destination-file /run/secrets/destination-url
 
 
 .. _databaseUrl:
@@ -279,20 +283,20 @@ Migrating SQLite (``/app/data/gokapi.sqlite``) to Redis (``127.0.0.1:6379``):
 
 ::
 
- gokapi migrate-database --source sqlite:///app/data/gokapi.sqlite --destination redis://127.0.0.1:6379
+ gokapi migrate-database --source-prompt --destination-prompt
 
 Migrating SQLite (``/app/data/gokapi.sqlite``) to SQLite (``./data/gokapi.sqlite``):
 
 ::
 
- gokapi migrate-database --source sqlite:///app/data/gokapi.sqlite --destination sqlite://./data/gokapi.sqlite
+ gokapi migrate-database --source-file /secure/source-url --destination-file /secure/destination-url
 
-Migrating Redis (``127.0.0.1:6379, User: test, Password: 1234, Prefix: gokapi_, using SSL``) to SQLite (``./data/gokapi.sqlite``):
+Migrating authenticated Redis to SQLite (``./data/gokapi.sqlite``), with the complete URLs stored in private files:
 
 
 ::
 
- gokapi migrate-database --source "redis://test:1234@127.0.0.1:6379?prefix=gokapi_&ssl=true" --destination sqlite://./data/gokapi.sqlite
+ gokapi migrate-database --source-file /secure/source-url --destination-file /secure/destination-url
 
 
 
@@ -413,7 +417,11 @@ By default, files are encrypted (if enabled) and have no expiration date. The fo
 +------------------------------------+---------------------------------------------------+
 | ``--expiry-downloads, -d [int]``   | Limits the number of allowed downloads.           |
 +------------------------------------+---------------------------------------------------+
-| ``--password, -p [string]``        | Protects the download with a password.            |
+| ``--password-prompt``             | Reads a password from a hidden terminal prompt.   |
++------------------------------------+---------------------------------------------------+
+| ``--password-file [path]``         | Reads a password from a protected private file.   |
++------------------------------------+---------------------------------------------------+
+| ``--password, -p [string]``        | Deprecated: exposes the password in argv.         |
 +------------------------------------+---------------------------------------------------+
 | ``--name, -n [string]``            | Assigns a custom filename on the server.          |
 +------------------------------------+---------------------------------------------------+
@@ -425,11 +433,11 @@ By default, files are encrypted (if enabled) and have no expiration date. The fo
 +------------------------------------+---------------------------------------------------+
 
 **Example:**
-Upload a file that expires in 10 days, has no download limit, and is protected by the password "abcd":
+Upload a file that expires in 10 days, has no download limit, and uses a hidden password prompt:
 
 .. code-block:: bash
 
-   supashare-cli upload -f /tmp/example --expiry-days 10 --password abcd
+   supashare-cli upload -f /tmp/example --expiry-days 10 --password-prompt
 
 
 Docker
@@ -476,10 +484,10 @@ In addition to all the options seen in chapter :ref:`clitool-upload-file`, the f
 +------------------------------------+---------------------------------------------------+
 
 
-**Example:** Uploading the folder ``/tmp/example/``. It will expire in 10 days, has unlimited downloads and requires the password ``abcd``:
+**Example:** Uploading the folder ``/tmp/example/``. It will expire in 10 days, has unlimited downloads and uses a hidden password prompt:
 ::
 
- supashare-cli upload-dir -D /tmp/example --expiry-days 10 --password abcd
+ supashare-cli upload-dir -D /tmp/example --expiry-days 10 --password-prompt
 
 
 .. warning::
@@ -775,11 +783,11 @@ If you are deploying SupaShare across multiple instances with different datasets
 Setting an admin password
 ====================================================
 
-If you are using internal username/password authentication, run the binary with the parameter ``--deployment-password [YOUR_PASSWORD]``. This sets the password in the database. This has to be done before SupaShare is run for the first time on the new instance. Alternatively you can do this on the orchestrating machine and then copy the configuration file and database to the new instance.
+If you are using internal username/password authentication, run the binary with ``--deployment-password-prompt`` in a terminal or ``--deployment-password-file /run/secrets/admin-password`` for unattended deployment. This sets the password in the database. This has to be done before SupaShare is run for the first time on the new instance. Alternatively you can do this on the orchestrating machine and then copy the configuration file and database to the new instance.
 
 If you are using a Docker image, this has to be done by starting a container with the entrypoint ``/app/run.sh``, for example: ::
 
- docker run --rm -v gokapi-data:/app/data -v gokapi-config:/app/config  supashare:local /app/run.sh --deployment-password newPassword
+ docker run --rm -v gokapi-data:/app/data -v gokapi-config:/app/config -v /secure/secrets:/run/secrets:ro supashare:local /app/run.sh --deployment-password-file /run/secrets/admin-password
 
 
 .. _customising:

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Activer007/SupaShare/cmd/cli-uploader/cliconstants"
 	"github.com/Activer007/SupaShare/internal/environment"
+	"github.com/Activer007/SupaShare/internal/secretinput"
 )
 
 const (
@@ -73,6 +74,11 @@ func Parse() int {
 // GetUploadParameters parses the command line arguments and returns the parameters for the upload command.
 func GetUploadParameters(mode int) FlagConfig {
 	result := FlagConfig{}
+	source, err := passwordSource(os.Args[2:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(2)
+	}
 	for i := 2; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "-j":
@@ -98,7 +104,10 @@ func GetUploadParameters(mode int) FlagConfig {
 		case "-p":
 			fallthrough
 		case "--password":
-			result.Password = getParameter(&i)
+			_ = getParameter(&i)
+		case "--password-file":
+			_ = getParameter(&i)
+		case "--password-prompt":
 		case "-D":
 			fallthrough
 		case "--directory":
@@ -144,6 +153,11 @@ func GetUploadParameters(mode int) FlagConfig {
 		os.Exit(2)
 	}
 
+	result.Password, err = secretinput.Resolve(source, "Upload password")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(2)
+	}
 	return result
 }
 
@@ -241,6 +255,10 @@ func GetConfigLocation() ([]string, bool) {
 			fallthrough
 		case "--configuration":
 			return []string{getParameter(&i)}, false
+		case "-p", "--password", "--password-file", "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path":
+			// A consumed value is data even when it looks like -c. In
+			// particular a password must never select a credential location.
+			i++
 		}
 	}
 	if environment.IsDockerInstance() {
@@ -256,7 +274,7 @@ func GetConfigLocation() ([]string, bool) {
 
 func getParameter(position *int) string {
 	newPosition := *position + 1
-	position = &newPosition
+	*position = newPosition
 	if newPosition >= len(os.Args) {
 		printUsage(3)
 	}
@@ -266,7 +284,7 @@ func getParameter(position *int) string {
 func requireInt(input string) int {
 	result, err := strconv.Atoi(input)
 	if err != nil {
-		fmt.Println("ERROR: " + input + " is not a valid integer")
+		fmt.Fprintln(os.Stderr, "ERROR: invalid integer argument")
 		os.Exit(2)
 	}
 	return result
@@ -296,7 +314,9 @@ func printUsage(exitCode int) {
 	fmt.Println("  -x, --disable-e2e               Disable end-to-end encryption")
 	fmt.Println("  -e, --expiry-days <int>         Set file expiry in days (default: unlimited)")
 	fmt.Println("  -d, --expiry-downloads <int>    Set max allowed downloads (default: unlimited)")
-	fmt.Println("  -p, --password <string>         Set a password for the file")
+	fmt.Println("  -p, --password <string>         Set file password (legacy: exposed in argv)")
+	fmt.Println("      --password-file <path>      Read password from a private file (upload/upload-dir/download)")
+	fmt.Println("      --password-prompt           Read password from a terminal without echo")
 	fmt.Println("  -n, --name <string>             Change final filename for uploaded file")
 	fmt.Println("  -o, --output <string>           Change the filename of the file to download")
 	fmt.Println("  -k, --output-path <path>        The folder to download the file to (default: current folder)")
@@ -313,4 +333,55 @@ func printUsage(exitCode int) {
 	fmt.Println("  supashare-cli download --remove -i chuTheishaipa9o -o myfile.zip")
 	fmt.Println()
 	os.Exit(exitCode)
+}
+
+// Parse sources without reading them, so help never opens files or prompts.
+func passwordSource(args []string) (secretinput.Source, error) {
+	source := secretinput.Source{}
+	count := 0
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-h" || arg == "--help" {
+			printUsage(0)
+		}
+		// Match the parser's value-taking options so a value is not reinterpreted as a flag.
+		switch arg {
+		case "-p", "--password", "--password-file":
+			count++
+			if i+1 >= len(args) {
+				return source, fmt.Errorf("missing secret input value")
+			}
+			i++
+			if arg == "--password-file" {
+				source.FileSet = true
+				source.File = args[i]
+			} else {
+				source.InlineSet = true
+				source.Inline = args[i]
+			}
+		case "--password-prompt":
+			count++
+			source.Prompt = true
+		case "-f", "--file", "-e", "--expiry-days", "-d", "--expiry-downloads", "-D", "--directory", "-t", "--tempfolder", "-n", "--name", "-i", "--id", "-o", "--output", "-k", "--output-path", "-c", "--configuration":
+			i++
+		default:
+			if strings.HasPrefix(arg, "--password-prompt=") {
+				return source, fmt.Errorf("password prompt takes no value")
+			}
+			if strings.HasPrefix(arg, "--password=") || strings.HasPrefix(arg, "-p=") {
+				count++
+				source.InlineSet = true
+				source.Inline = strings.SplitN(arg, "=", 2)[1]
+			}
+			if strings.HasPrefix(arg, "--password-file=") {
+				count++
+				source.FileSet = true
+				source.File = strings.SplitN(arg, "=", 2)[1]
+			}
+		}
+	}
+	if count > 1 {
+		return source, fmt.Errorf("select only one password source; repeated sources are not allowed")
+	}
+	return source, nil
 }
