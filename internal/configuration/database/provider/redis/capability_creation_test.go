@@ -11,7 +11,43 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	redigo "github.com/gomodule/redigo/redis"
 )
+
+func TestN15CreationMaintainsInstalledFileRequestIndex(t *testing.T) {
+	scene := sec030RedisNew(t)
+	indexVersion := scene.config.RedisPrefix + "frqidx:version"
+	sec030RedisDo(t, scene.conn, "SET", indexVersion, 1)
+	file := models.File{Id: "indexed-upload", UserId: 1, UploadRequestId: "collection"}
+	if err := scene.db.CreateFileMetadata(file); err != nil {
+		t.Fatal(err)
+	}
+	member, err := redigo.Bool(scene.conn.Do("SISMEMBER", scene.config.RedisPrefix+"frqidx:files:collection", file.Id))
+	if err != nil || !member {
+		t.Fatalf("created file missing from installed request index: %v", err)
+	}
+
+	blocked := models.File{Id: "blocked-upload", UserId: 1, UploadRequestId: "broken-index", HotlinkId: "blocked.png"}
+	sec030RedisDo(t, scene.conn, "SET", scene.config.RedisPrefix+"frqidx:files:broken-index", "wrong type")
+	revision, err := redigo.String(scene.conn.Do("GET", scene.config.RedisPrefix+keyMetadataRevision))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scene.db.CreateFileMetadata(blocked); err == nil {
+		t.Fatal("invalid installed index accepted")
+	}
+	if _, exists := scene.db.GetMetaDataById(blocked.Id); exists {
+		t.Fatal("partial file published")
+	}
+	if _, exists := scene.db.GetHotlink(blocked.HotlinkId); exists {
+		t.Fatal("partial hotlink published")
+	}
+	after, err := redigo.String(scene.conn.Do("GET", scene.config.RedisPrefix+keyMetadataRevision))
+	if err != nil || after != revision {
+		t.Fatal("failed publication changed the metadata revision", err)
+	}
+}
 
 func TestN15CapabilityCollision(t *testing.T) {
 	db := sec030RedisNew(t).db
