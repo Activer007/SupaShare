@@ -9,6 +9,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
@@ -198,7 +199,9 @@ func TestAdminExpiredAuth(t *testing.T) {
 }
 
 func TestAdminRenewalAuth(t *testing.T) {
-	t.Parallel()
+	renewal, _ := database.GetSession("needsRenewal")
+	renewal.ValidUntil = time.Now().Add(time.Hour).Unix()
+	database.SaveSession("needsRenewal", renewal)
 	cookies := test.HttpPageResult(t, test.HttpTestConfig{
 		Url:             "http://localhost:53843/admin",
 		RequiredContent: []string{"Downloads remaining"},
@@ -369,6 +372,38 @@ func TestDownloadHotlink(t *testing.T) {
 		Url:             "http://127.0.0.1:53843/h/wjqlzpq2.jpg",
 		RequiredContent: []string{"The requested file has expired"},
 	})
+}
+
+func TestDownloadHotlinkExpiredSvgSecurity(t *testing.T) {
+	r := httptest.NewRequest("GET", "/h/nonexistent_expired_id.jpg", nil)
+	w := httptest.NewRecorder()
+	showHotlink(w, r)
+
+	test.IsEqualInt(t, w.Code, http.StatusOK)
+	test.IsEqualString(t, w.Header().Get("Content-Type"), "image/svg+xml")
+	test.IsEqualString(t, w.Header().Get("Content-Security-Policy"), "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	test.IsEqualString(t, w.Header().Get("X-Content-Type-Options"), "nosniff")
+
+	origName := configuration.Get().PublicName
+	defer func() {
+		configuration.Get().PublicName = origName
+		loadExpiryImage()
+	}()
+
+	configuration.Get().PublicName = `<script xmlns="http://www.w3.org/2000/svg">alert(1)</script>`
+	loadExpiryImage()
+
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest("GET", "/h/nonexistent_expired_id.jpg", nil)
+	showHotlink(w2, r2)
+
+	body := w2.Body.String()
+	if strings.Contains(body, "<script") {
+		t.Fatalf("SVG contains unescaped script tag: %s", body)
+	}
+	if !strings.Contains(body, "&lt;script") {
+		t.Fatalf("SVG should contain escaped script entity: %s", body)
+	}
 }
 
 func TestDownloadNoPassword(t *testing.T) {

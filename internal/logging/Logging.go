@@ -97,10 +97,16 @@ func getDockerSubnet() (*net.IPNet, error) {
 // GetAll returns all log entries as a single string and if the log file exists
 func GetAll() (string, bool) {
 	exists, err := helper.FileExists(logPath)
-	helper.Check(err)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to check log file existence %s: %v\n", logPath, err)
+		return fmt.Sprintf("[%s] Unable to read log file!", categoryWarning), false
+	}
 	if exists {
 		content, err := os.ReadFile(logPath)
-		helper.Check(err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to read log file %s: %v\n", logPath, err)
+			return fmt.Sprintf("[%s] Unable to read log file!", categoryWarning), false
+		}
 		return string(content), true
 	}
 	return fmt.Sprintf("[%s] No log file found!", categoryWarning), false
@@ -109,8 +115,7 @@ func GetAll() (string, bool) {
 // GetSince returns all log entries since a given timestamp
 func GetSince(timestamp int64) string {
 	exists, err := helper.FileExists(logPath)
-	helper.Check(err)
-	if !exists {
+	if err != nil || !exists {
 		return fmt.Sprintf("[%s] No log file found!", categoryWarning)
 	}
 	var (
@@ -132,7 +137,9 @@ func GetSince(timestamp int64) string {
 		return nil, false
 	})
 
-	helper.Check(err)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read log entries from %s: %v\n", logPath, err)
+	}
 
 	for i := len(lines) - 1; i >= 0; i-- {
 		output.WriteString(lines[i])
@@ -351,8 +358,12 @@ func DeleteLogs(userName string, userId int, cutoff int64, r *http.Request) {
 		return
 	}
 	mutex.Lock()
+	defer mutex.Unlock()
 	logFile, err := os.ReadFile(logPath)
-	helper.Check(err)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read log file %s: %v\n", logPath, err)
+		return
+	}
 	var newFile strings.Builder
 	scanner := bufio.NewScanner(strings.NewReader(string(logFile)))
 	newFile.WriteString(getLogDeletionMessage(userName, userId, r, time.Unix(cutoff, 0)))
@@ -368,8 +379,9 @@ func DeleteLogs(userName string, userId int, cutoff int64, r *http.Request) {
 		}
 	}
 	err = os.WriteFile(logPath, []byte(newFile.String()), 0600)
-	helper.Check(err)
-	defer mutex.Unlock()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log file %s: %v\n", logPath, err)
+	}
 }
 
 func parseTimeLogEntry(input string) (time.Time, error) {
@@ -388,17 +400,30 @@ func deleteAllLogs(userName string, userId int, r *http.Request) {
 	defer mutex.Unlock()
 	message := getLogDeletionMessage(userName, userId, r, time.Now())
 	err := os.WriteFile(logPath, []byte(message), 0600)
-	helper.Check(err)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log deletion message to %s: %v\n", logPath, err)
+	}
 }
 
 func writeToFile(text string) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "logging panic recovered: %v\n", r)
+		}
+	}()
 	mutex.Lock()
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	helper.Check(err)
-	defer file.Close()
 	defer mutex.Unlock()
-	_, err = file.WriteString(text + "\n")
-	helper.Check(err)
+
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open log file %s: %v\n", logPath, err)
+		return
+	}
+	defer file.Close()
+
+	if _, err = file.WriteString(text + "\n"); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log entry to %s: %v\n", logPath, err)
+	}
 }
 
 func getDate(timestamp time.Time) string {

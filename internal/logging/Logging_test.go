@@ -79,3 +79,24 @@ func TestAddDownload(t *testing.T) {
 	content, _ = os.ReadFile("test/log.txt")
 	test.IsEqualBool(t, strings.Contains(string(content), "2.2.2.2"), false)
 }
+
+func TestWriteToFileResilience(t *testing.T) {
+	origPath := logPath
+	defer func() { logPath = origPath }()
+
+	// Point logPath to an invalid location where file creation is guaranteed to fail
+	logPath = "/nonexistent_dir/cannot_create/log.txt"
+
+	// writeToFile must not panic even when file open/write fails
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("writeToFile panicked on I/O error: %v", r)
+		}
+	}()
+
+	writeToFile("this should fail gracefully without crashing")
+	deleteAllLogs("testUser", 1, httptest.NewRequest("GET", "/", nil))
+	DeleteLogs("testUser", 1, time.Now().Unix(), httptest.NewRequest("GET", "/", nil))
+	_, _ = GetAll()
+	_ = GetSince(time.Now().Unix())
+}
