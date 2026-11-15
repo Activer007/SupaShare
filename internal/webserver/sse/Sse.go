@@ -157,10 +157,15 @@ func GetStatusSSE(w http.ResponseWriter, r *http.Request) {
 			ErrorMessage: status.ErrorMessage,
 		}
 		message, merr := json.Marshal(event)
-		helper.Check(merr)
+		if merr != nil {
+			continue
+		}
 		_, _ = io.WriteString(w, "event: message\ndata: "+string(message)+"\n\n")
 	}
 	w.(http.Flusher).Flush()
+
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
 
 	for {
 		if time.Now().After(creationTime.Add(maxConnection)) {
@@ -171,7 +176,7 @@ func GetStatusSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case reply := <-replyChannel:
 			_, _ = io.WriteString(w, reply)
-		case <-time.After(pingInterval):
+		case <-ticker.C:
 			_, _ = io.WriteString(w, "event: ping\n\n")
 		case <-ctx.Done():
 			removeListener(channelId)

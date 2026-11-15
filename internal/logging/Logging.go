@@ -463,10 +463,21 @@ func IsTrustedProxy(r *http.Request) bool {
 	return ip != nil && isTrustedProxy(ip)
 }
 
+var warnUntrustedProxyOnce sync.Once
+
+func checkUntrustedForwardingHeader(r *http.Request, peer string) {
+	if len(r.Header.Values("X-Forwarded-For")) != 0 || len(r.Header.Values("CF-Connecting-IP")) != 0 || len(r.Header.Values("X-Real-IP")) != 0 {
+		warnUntrustedProxyOnce.Do(func() {
+			fmt.Fprintf(os.Stderr, "WARNING: Received proxy forwarding headers from untrusted peer %s. Client IP rate limiting will fall back to peer IP. If this is a reverse proxy, add it to TRUSTED_PROXIES.\n", peer)
+		})
+	}
+}
+
 // GetIpAddress returns the client IP established by the trusted proxy chain.
 func GetIpAddress(r *http.Request) string {
 	peer := peerIP(r)
 	if !IsTrustedProxy(r) {
+		checkUntrustedForwardingHeader(r, peer)
 		return peer
 	}
 	if useCloudflare && len(r.Header.Values("CF-Connecting-IP")) != 0 {

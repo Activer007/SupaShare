@@ -34,8 +34,8 @@ func TestSEC012FileCookieTransport(t *testing.T) {
 			t.Fatal("expected one download password cookie")
 		}
 		c := cookies[0]
-		if c.Secure != tc.secure || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode {
-			t.Errorf("public URL %s: Secure=%v HttpOnly=%v SameSite=%v", tc.url, c.Secure, c.HttpOnly, c.SameSite)
+		if c.Secure != tc.secure || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+			t.Errorf("public URL %s: Secure=%v HttpOnly=%v SameSite=%v Path=%v", tc.url, c.Secure, c.HttpOnly, c.SameSite, c.Path)
 		}
 	}
 }

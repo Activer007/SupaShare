@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Activer007/SupaShare/internal/configuration"
 )
 
 const sec050ReportOnlyPolicy = "base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'"
@@ -28,6 +30,32 @@ func TestSEC050OriginalWriter(t *testing.T) {
 	sec050CheckCommonHeaders(t, original.Result().Header)
 	if original.Result().Header.Get("Content-Security-Policy") != "sandbox" {
 		t.Fatal("download sandbox was overwritten")
+	}
+}
+
+func TestSEC050HSTSHeader(t *testing.T) {
+	origUrl := configuration.Get().ServerUrl
+	t.Cleanup(func() { configuration.Get().ServerUrl = origUrl })
+
+	// Under HTTP, HSTS must not be set
+	configuration.Get().ServerUrl = "http://example.com"
+	recHttp := httptest.NewRecorder()
+	withResponsePolicy(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(recHttp, httptest.NewRequest(http.MethodGet, "/", nil))
+	if hsts := recHttp.Result().Header.Get("Strict-Transport-Security"); hsts != "" {
+		t.Fatalf("expected empty HSTS header under HTTP, got %q", hsts)
+	}
+
+	// Under HTTPS, HSTS must be set
+	configuration.Get().ServerUrl = "https://example.com"
+	recHttps := httptest.NewRecorder()
+	withResponsePolicy(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(recHttps, httptest.NewRequest(http.MethodGet, "/", nil))
+	const wantHSTS = "max-age=63072000; includeSubDomains"
+	if hsts := recHttps.Result().Header.Get("Strict-Transport-Security"); hsts != wantHSTS {
+		t.Fatalf("expected HSTS header %q, got %q", wantHSTS, hsts)
 	}
 }
 
