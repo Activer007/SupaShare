@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Activer007/SupaShare/internal/helper"
 )
@@ -24,6 +26,7 @@ var (
 	ErrCapacity = errors.New("upload receiver capacity exceeded")
 	ErrSpace    = errors.New("insufficient upload receiver disk space")
 	ErrTooLarge = errors.New("upload request is too large")
+	ErrTimeout  = errors.New("upload body progress deadline exceeded")
 	ErrInvalid  = errors.New("invalid upload request or spool")
 )
 
@@ -35,6 +38,10 @@ type Pool struct {
 	closeFile                       func(*os.File) error
 	dataDir, root                   string
 	initialized                     bool
+	subjects                        map[string]int64
+	progressWindow                  time.Duration
+	progressBytes                   int64
+	maxReceiveTime                  time.Duration
 	leases                          map[string]*lease
 	orphans                         map[string]*lease
 }
@@ -51,6 +58,7 @@ type Upload struct {
 }
 
 type lease struct {
+	subjects             []string
 	name                 string
 	charge, bodyReserved int64
 	active, released     bool
@@ -70,13 +78,23 @@ func New(slots int64, budgetBytes int64) (*Pool, error) {
 		return nil, ErrInvalid
 	}
 	return &Pool{slots: slots, budget: budgetBytes, free: helper.GetFreeSpace, remove: os.Remove, closeFile: (*os.File).Close,
-		leases: make(map[string]*lease), orphans: make(map[string]*lease)}, nil
+		leases: make(map[string]*lease), orphans: make(map[string]*lease), subjects: make(map[string]int64), progressWindow: time.Minute, progressBytes: 64 << 10, maxReceiveTime: 2 * time.Hour}, nil
 }
 
 // Receive keeps one payload on disk and accepts both file-first and fields-first
 // multipart clients. The caller owns the returned Upload and must Close it after
 // storage processing. The request body remains owned by the HTTP caller.
-func (p *Pool) Receive(w http.ResponseWriter, r *http.Request, dataDir string, maxFileBytes int64, minFreeBytes int64) (upload *Upload, err error) {
+func (p *Pool) Receive(w http.ResponseWriter, r *http.Request, dataDir string, maxFileBytes int64, minFreeBytes int64) (*Upload, error) {
+	return p.receive(w, r, dataDir, maxFileBytes, minFreeBytes, nil)
+}
+
+// ReceiveScoped enforces fairness for a server-authenticated upload principal.
+// Every production HTTP upload entry point must use this method.
+func (p *Pool) ReceiveScoped(w http.ResponseWriter, r *http.Request, dataDir string, maxFileBytes int64, minFreeBytes int64, scope Scope) (*Upload, error) {
+	return p.receive(w, r, dataDir, maxFileBytes, minFreeBytes, []Scope{scope})
+}
+
+func (p *Pool) receive(w http.ResponseWriter, r *http.Request, dataDir string, maxFileBytes int64, minFreeBytes int64, scopes []Scope) (upload *Upload, err error) {
 	if p == nil || r == nil || r.Body == nil || dataDir == "" || maxFileBytes < 0 || maxFileBytes > math.MaxInt64-envelopeBytes || minFreeBytes < 0 || r.ContentLength < -1 {
 		return nil, ErrInvalid
 	}
@@ -85,7 +103,11 @@ func (p *Pool) Receive(w http.ResponseWriter, r *http.Request, dataDir string, m
 	if r.ContentLength > maxBody {
 		return nil, ErrTooLarge
 	}
-	l, err := p.acquire(ctx, dataDir, r.ContentLength, minFreeBytes)
+	subjects, err := scopeKeys(scopes)
+	if err != nil {
+		return nil, err
+	}
+	l, err := p.acquire(ctx, dataDir, r.ContentLength, minFreeBytes, subjects)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +117,16 @@ func (p *Pool) Receive(w http.ResponseWriter, r *http.Request, dataDir string, m
 			err = errors.Join(err, current.Close())
 		}
 	}()
+	progress, err := newProgressReader(w, r, p.progressWindow, p.progressBytes, p.maxReceiveTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil && progress.timedOut {
+			err = errors.Join(ErrTimeout, err)
+		}
+		progress.finish(err == nil)
+	}()
 	media, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "multipart/form-data" {
 		return nil, http.ErrNotMultipart // preserve the existing public API error
@@ -102,7 +134,7 @@ func (p *Pool) Receive(w http.ResponseWriter, r *http.Request, dataDir string, m
 	if params["boundary"] == "" || len(params["boundary"]) > 70 {
 		return nil, ErrInvalid
 	}
-	reader := &budgetReader{ctx: ctx, reader: http.MaxBytesReader(w, r.Body, maxBody), pool: p, lease: l, maxBody: maxBody, minFree: minFreeBytes}
+	reader := &budgetReader{ctx: ctx, reader: http.MaxBytesReader(w, progress, maxBody), pool: p, lease: l, maxBody: maxBody, minFree: minFreeBytes}
 	multipartReader := multipart.NewReader(reader, params["boundary"])
 	fieldBytes, fields := 0, 0
 	for {
@@ -280,7 +312,7 @@ func reservationCharge(body int64) (int64, error) {
 	return body*4 + baseCharge, nil
 }
 
-func (p *Pool) acquire(ctx context.Context, dataDir string, length, minFree int64) (*lease, error) {
+func (p *Pool) acquire(ctx context.Context, dataDir string, length, minFree int64, subjects []string) (*lease, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -291,6 +323,11 @@ func (p *Pool) acquire(ctx context.Context, dataDir string, length, minFree int6
 	}
 	if p.active >= p.slots {
 		return nil, ErrBusy
+	}
+	for _, key := range subjects {
+		if p.subjects[key] >= max(int64(1), p.slots/2) {
+			return nil, ErrBusy
+		}
 	}
 	if err := p.prepareSpool(dataDir); err != nil {
 		return nil, err
@@ -306,7 +343,10 @@ func (p *Pool) acquire(ctx context.Context, dataDir string, length, minFree int6
 	if err := p.checkCapacity(charge, minFree); err != nil {
 		return nil, err
 	}
-	l := &lease{charge: charge, bodyReserved: body, active: true}
+	l := &lease{charge: charge, bodyReserved: body, active: true, subjects: subjects}
+	for _, key := range subjects {
+		p.subjects[key]++
+	}
 	p.active++
 	p.reserved += charge
 	return l, nil
@@ -381,6 +421,9 @@ func (u *Upload) Close() error {
 }
 
 func receiveError(err error) error {
+	if errors.Is(err, ErrTimeout) {
+		return err
+	}
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) || errors.Is(err, multipart.ErrMessageTooLarge) {
 		return errors.Join(ErrTooLarge, err)
@@ -389,4 +432,25 @@ func receiveError(err error) error {
 		return err
 	}
 	return errors.Join(ErrInvalid, err)
+}
+
+// Scope is supplied by the authenticated upload entry point, never multipart data.
+// Request uploads share both their owner's budget and the invitation's budget.
+type Scope struct {
+	UserID    int
+	RequestID string
+}
+
+func scopeKeys(scopes []Scope) ([]string, error) {
+	if len(scopes) == 0 {
+		return nil, nil
+	} // internal non-HTTP callers/tests
+	if len(scopes) != 1 || scopes[0].UserID <= 0 || len(scopes[0].RequestID) > 128 {
+		return nil, ErrInvalid
+	}
+	keys := []string{"user:" + strconv.Itoa(scopes[0].UserID)}
+	if scopes[0].RequestID != "" {
+		keys = append(keys, "request:"+scopes[0].RequestID)
+	}
+	return keys, nil
 }

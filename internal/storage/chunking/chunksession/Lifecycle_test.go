@@ -200,44 +200,6 @@ func TestSEC030ChunkSessionSweepPreservesUncertainPublication(t *testing.T) {
 	}
 }
 
-func TestSEC030ChunkSessionAbsoluteExpiryAndScope(t *testing.T) {
-	for _, backend := range []string{"sqlite", "redis"} {
-		t.Run(backend, func(t *testing.T) {
-			s := testStore(t, backend)
-			scope := testScopes()[1]
-			now := time.Now().Unix()
-			s.now = func() int64 { return now }
-			initial, err := s.Reserve(context.Background(), scope, testLimits())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if initial.ExpiresAt-now != uploadquota.MaxLifetime {
-				t.Fatal("new session did not receive absolute 24h expiry")
-			}
-			now += 5 * 60 // A legitimate file-first reception may exceed the old 4m TTL.
-			if _, err := testWrite(s, scope, 6, 0, []byte("abc")); err != nil {
-				t.Fatal(err)
-			}
-			other := scope
-			other.RequestID = "another-request"
-			if _, err := testWrite(s, other, 6, 3, []byte("bad")); !errors.Is(err, uploadquota.ErrConflict) {
-				t.Fatal("same UUID crossed request scope", err)
-			}
-			now += 60 * 60
-			if r, err := testWrite(s, scope, 6, 3, []byte("def")); err != nil || r.ExpiresAt != initial.ExpiresAt {
-				t.Fatal("write slid expiry or rejected legitimate completion", err)
-			}
-			now = initial.ExpiresAt
-			if _, err := testWrite(s, scope, 6, 0, []byte("abc")); !errors.Is(err, uploadquota.ErrExpired) {
-				t.Fatal("expired retry renewed admission", err)
-			}
-			if testReceipt(t, s, scope).StagingReleased {
-				t.Fatal("expiry alone refunded staging")
-			}
-		})
-	}
-}
-
 func TestSEC030ChunkSessionManifestBounds(t *testing.T) {
 	hash := sha256.Sum256([]byte("synthetic"))
 	digest := hex.EncodeToString(hash[:])

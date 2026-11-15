@@ -246,6 +246,12 @@ func (p *Pool) finish(l *lease, closeUncertain bool) error {
 	}
 	if l.active {
 		p.active--
+		for _, key := range l.subjects {
+			p.subjects[key]--
+			if p.subjects[key] == 0 {
+				delete(p.subjects, key)
+			}
+		}
 		l.active = false
 	}
 	l.closeUncertain = l.closeUncertain || closeUncertain

@@ -100,7 +100,7 @@ func TestSEC031UploadSizeSemantics(t *testing.T) {
 				}
 				return result.ErrorMessage
 			}
-			reserve := func() string {
+			reserve := func(t *testing.T) string {
 				w := call("/uploadrequest/chunk/reserve", nil, map[string]string{"id": request.Id})
 				var result struct{ Uuid string }
 				if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Uuid == "" {
@@ -154,10 +154,9 @@ func TestSEC031UploadSizeSemantics(t *testing.T) {
 					request.AllowedDownloads = 10
 					database.SaveFileRequest(request)
 				}
-				uuid := reserve()
 				if i == 0 {
 					t.Run("minimum-free-space", func(t *testing.T) {
-						probeID := reserve()
+						probeID := reserve(t)
 						defer func() {
 							if err := storage.ChunkSessions().Cancel(context.Background(), chunksession.Scope{ClientID: probeID, UserID: user.Id, RequestID: request.Id}); err != nil {
 								t.Error(err)
@@ -177,6 +176,7 @@ func TestSEC031UploadSizeSemantics(t *testing.T) {
 						unknown bool
 					}{{"over-per-file-limit", 1024*1024 + 1, false}} {
 						t.Run(test.name, func(t *testing.T) {
+							uuid := reserve(t)
 							w := chunk(uuid, bytes.Repeat([]byte{0x31}, test.payload), test.unknown)
 							code := errorcodes.FileTooLarge
 							if test.unknown {
@@ -214,7 +214,7 @@ func TestSEC031UploadSizeSemantics(t *testing.T) {
 						unknown bool
 					}{{"exact-payload-limit", 1024 * 1024, false}, {"unknown-length-last-chunk", 3, true}} {
 						t.Run(item.name, func(t *testing.T) {
-							probeID := reserve()
+							probeID := reserve(t)
 							payload := bytes.Repeat([]byte{0x32}, item.size)
 							w := chunk(probeID, payload, item.unknown)
 							if w.Code != http.StatusOK {
@@ -224,6 +224,7 @@ func TestSEC031UploadSizeSemantics(t *testing.T) {
 						})
 					}
 				}
+				uuid := reserve(t)
 				payload := bytes.Repeat([]byte{byte(i + 1)}, 768*1024)
 				if w := chunk(uuid, payload, false); w.Code != http.StatusOK {
 					t.Fatalf("valid chunk rejected: status=%d", w.Code)

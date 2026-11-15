@@ -16,7 +16,7 @@ func (change Change) RequiresRequestPolicy() bool {
 		return false
 	}
 	switch change.Action {
-	case Reserve, Bind, Claim, Commit, DuplicateMetadata:
+	case Reserve, Bind, Progress, Claim, Commit, DuplicateMetadata:
 		return true
 	default:
 		return false

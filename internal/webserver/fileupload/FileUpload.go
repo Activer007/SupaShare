@@ -35,7 +35,7 @@ func ProcessCompleteFile(w http.ResponseWriter, r *http.Request, userId, _ int) 
 	if err != nil {
 		return err
 	}
-	upload, err := receiveUpload(w, r, maxFile)
+	upload, err := receiveUpload(w, r, maxFile, uploadreceive.Scope{UserID: userId})
 	if err != nil {
 		return err
 	}
@@ -79,9 +79,19 @@ func isChunkMinChunkSize(chunkSize, offset, fileSize int64) bool {
 
 // ProcessNewChunk processes a file chunk upload request
 func ProcessNewChunk(w http.ResponseWriter, r *http.Request, isApiCall bool, filerequestId string, userId int, maxFileSize int64) (int, error) {
+	if filerequestId != "" {
+		ctx, release, err := storage.ChunkSessions().BeginReceive(r.Context(), userId, filerequestId)
+		if err != nil {
+			stopRejectedUpload(w, r)
+			failure := wholeUploadFailure{err}
+			return ReceiveErrorCode(failure, errorcodes.CannotAllocateFile), failure
+		}
+		defer release()
+		r = r.WithContext(ctx)
+	}
 	// ChunkSize is a client tuning value. Browser E2E chunks include cipher
 	// overhead; the file payload limit and shared receiver budget bound both.
-	upload, err := receiveUpload(w, r, maxFileSize)
+	upload, err := receiveUpload(w, r, maxFileSize, uploadreceive.Scope{UserID: userId, RequestID: filerequestId})
 	if err != nil {
 		return ReceiveErrorCode(err, errorcodes.CannotParse), err
 	}
@@ -156,7 +166,7 @@ func PrepareReceiver(ctx context.Context, dataDir string) error {
 	return pool.Prepare(ctx, dataDir)
 }
 
-func receiveUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64) (*uploadreceive.Upload, error) {
+func receiveUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64, scope uploadreceive.Scope) (*uploadreceive.Upload, error) {
 	pool, err := uploadReceiver()
 	if err != nil {
 		stopRejectedUpload(w, r)
@@ -168,7 +178,7 @@ func receiveUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64) (
 		stopRejectedUpload(w, r)
 		return nil, err
 	}
-	upload, err := pool.Receive(w, r, configuration.Get().DataDir, maxFileBytes, minFree)
+	upload, err := pool.ReceiveScoped(w, r, configuration.Get().DataDir, maxFileBytes, minFree, scope)
 	if err != nil {
 		stopRejectedUpload(w, r)
 	}
@@ -225,6 +235,8 @@ func ReceiveErrorStatus(err error) int {
 		return status
 	}
 	switch {
+	case errors.Is(err, uploadreceive.ErrTimeout):
+		return http.StatusRequestTimeout
 	case errors.Is(err, uploadreceive.ErrBusy):
 		return http.StatusTooManyRequests
 	case errors.Is(err, uploadreceive.ErrCapacity), errors.Is(err, uploadreceive.ErrSpace):
