@@ -5,6 +5,7 @@ Manages the sessions for the admin user or to access password-protected files
 */
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -64,7 +65,14 @@ func useSession(w http.ResponseWriter, id string, session models.Session, isOaut
 		}
 		writeSessionCookie(w, replacementID, time.Unix(replacement.ValidUntil, 0))
 	}
-	go database.UpdateUserLastOnline(session.UserId)
+	go func(uid int) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("recovered panic in UpdateUserLastOnline: %v", r)
+			}
+		}()
+		database.UpdateUserLastOnline(uid)
+	}(session.UserId)
 	return true
 }
 

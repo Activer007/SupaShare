@@ -3,6 +3,7 @@ package configuration
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,7 +46,14 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidUI(t *testing.T) {
-	file := t.TempDir() + "/config.json"
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "config.json")
 	for _, input := range []string{`{"UI":{"DefaultLanguage":"fr"}}`, `{"UI":{"FooterLinks":[{"Text":"Help","URL":"javascript:alert(1)"}]}}`} {
 		if err := os.WriteFile(file, []byte(input), 0600); err != nil {
 			t.Fatal(err)

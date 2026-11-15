@@ -979,10 +979,7 @@ func apiReplaceFile(w http.ResponseWriter, r requestParser, user models.User, ap
 	if !ok {
 		panic("invalid parameter passed")
 	}
-	keys := []string{request.Id}
-	if request.DeleteNewFile {
-		keys = append(keys, request.IdNewContent)
-	}
+	keys := []string{request.Id, request.IdNewContent}
 	unlock := apimutex.LockMany(apimutex.TypeMetaData, keys...)
 	defer unlock()
 	fileOriginal, ok := storage.GetFile(request.Id)

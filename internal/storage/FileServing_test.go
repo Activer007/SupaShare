@@ -1013,38 +1013,39 @@ func TestParallelDownloads(t *testing.T) {
 	}
 	database.SaveMetaData(singleDownloadFile)
 
-	synctest.Test(t, func(t *testing.T) {
-		const workers = 50
-		results := make(chan bool, workers)
+	const workers = 50
+	results := make(chan bool, workers)
+	var wg sync.WaitGroup
 
-		for i := 0; i < workers; i++ {
-			go func() {
-				w := httptest.NewRecorder()
-				r := httptest.NewRequest("GET", "/"+singleDownloadFile.Id, nil)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/"+singleDownloadFile.Id, nil)
 
-				// The mutex inside ServeFile should serialize the decrement logic.
-				success := ServeFile(singleDownloadFile, w, r, false, true, false, true)
-				results <- success
-			}()
+			// The mutex inside ServeFile should serialize the decrement logic.
+			success := ServeFile(singleDownloadFile, w, r, false, true, false, true)
+			results <- success
+		}()
+	}
+
+	wg.Wait()
+	close(results)
+
+	var successCount int
+	var failureCount int
+
+	for res := range results {
+		if res {
+			successCount++
+		} else {
+			failureCount++
 		}
+	}
 
-		synctest.Wait()
-		close(results)
-
-		var successCount int
-		var failureCount int
-
-		for res := range results {
-			if res {
-				successCount++
-			} else {
-				failureCount++
-			}
-		}
-
-		test.IsEqualInt(t, successCount, allowedDownloads)
-		test.IsEqualInt(t, failureCount, workers-allowedDownloads)
-	})
+	test.IsEqualInt(t, successCount, allowedDownloads)
+	test.IsEqualInt(t, failureCount, workers-allowedDownloads)
 }
 
 func TestServeFilesAsZipSanitisation(t *testing.T) {

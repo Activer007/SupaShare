@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/helper"
@@ -77,7 +78,9 @@ func (p DatabaseProvider) DeleteAllSessionsByUser(userId int) {
 
 func (p DatabaseProvider) cleanExpiredSessions() {
 	_, err := p.sqliteDb.Exec("DELETE FROM Sessions WHERE Sessions.ValidUntil < ?", time.Now().Unix())
-	helper.Check(err)
+	if err != nil {
+		log.Printf("cleanExpiredSessions failed: %v", err)
+	}
 }
 
 // Retry-safe for a process stopped between schema mutation and version update.

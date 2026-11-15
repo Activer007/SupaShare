@@ -28,6 +28,7 @@ func TestNoResetPw(t *testing.T) {
 }
 
 func TestCreateSsl(t *testing.T) {
+	t.Cleanup(func() { _ = os.Remove("test/ssl.key"); _ = os.Remove("test/ssl.crt") })
 	test.FileDoesNotExist(t, "test/ssl.key")
 	createSsl(flagparser.MainFlags{})
 	test.FileDoesNotExist(t, "test/ssl.key")

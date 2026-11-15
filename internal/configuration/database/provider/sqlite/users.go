@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/helper"
@@ -116,8 +117,10 @@ AuthGeneration=Users.AuthGeneration + CASE WHEN COALESCE(Users.Password,'') != e
 // UpdateUserLastOnline writes the last online time to the database
 func (p DatabaseProvider) UpdateUserLastOnline(id int) {
 	timeNow := time.Now().Unix()
-	_, err := p.sqliteDb.Exec("UPDATE Users SET LastOnline= ? WHERE Id = ?", timeNow, id, timeNow)
-	helper.Check(err)
+	_, err := p.sqliteDb.Exec("UPDATE Users SET LastOnline = ? WHERE Id = ?", timeNow, id)
+	if err != nil {
+		log.Printf("UpdateUserLastOnline failed for user %d: %v", id, err)
+	}
 }
 
 // DeleteUser deletes a user with the given ID

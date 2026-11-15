@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/helper"
@@ -126,7 +127,13 @@ func (p DatabaseProvider) InsertApiKey(apikey models.ApiKey) (bool, error) {
 func (p DatabaseProvider) UpdateTimeApiKey(apikey models.ApiKey) {
 	_, err := p.sqliteDb.Exec("UPDATE ApiKeys SET LastUsed = ? WHERE Id = ?",
 		apikey.LastUsed, apikey.Id)
-	helper.Check(err)
+	if err != nil {
+		if apikey.PublicId != "" {
+			log.Printf("UpdateTimeApiKey failed for key %s: %v", apikey.PublicId, err)
+		} else {
+			log.Printf("UpdateTimeApiKey failed: %v", err)
+		}
+	}
 }
 
 // DeleteApiKey deletes an API key with the given ID
@@ -137,7 +144,9 @@ func (p DatabaseProvider) DeleteApiKey(id string) {
 
 func (p DatabaseProvider) cleanApiKeys() {
 	_, err := p.sqliteDb.Exec("DELETE FROM ApiKeys WHERE ApiKeys.Expiry > 0 AND ApiKeys.Expiry < ?", currentTime().Unix())
-	helper.Check(err)
+	if err != nil {
+		log.Printf("cleanApiKeys failed: %v", err)
+	}
 }
 
 // CreateUserApiKey uses one write statement as the cross-process quota gate.

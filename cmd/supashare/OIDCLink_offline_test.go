@@ -19,7 +19,13 @@ import (
 )
 
 func TestRunOIDCLinkOfflinePreservesExistingAccount(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	data := filepath.Join(dir, "data")
 	cfg := models.DbConnection{HostUrl: filepath.Join(dir, "legacy.sqlite")}
 	p, err := dbabstraction.GetNew(cfg)
