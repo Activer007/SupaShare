@@ -334,7 +334,11 @@ type paramDeliveryCreate struct {
 	Input   delivery.Input
 }
 
-type paramDeliveryList struct{ Request *http.Request }
+type paramDeliveryList struct {
+	Request *http.Request
+	Before  string
+	Limit   int
+}
 
 type paramQuotaSummary struct{ Request *http.Request }
 

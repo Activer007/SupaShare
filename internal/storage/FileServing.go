@@ -949,6 +949,11 @@ func CleanUp(periodic bool) {
 		log.Print("Chunk upload cleanup pending")
 	}
 	cancel()
+	deliveryCtx, deliveryCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := database.PruneDeliveries(deliveryCtx, time.Now().Unix(), 1000); err != nil {
+		log.Print("Delivery cleanup pending")
+	}
+	deliveryCancel()
 	downloadstatus.Clean()
 	if _, err := CleanUpContext(context.Background()); err != nil {
 		log.Print("File cleanup pending")

@@ -40,5 +40,6 @@
           <p class="small text-muted">{{$.UI.T "delivery.revokeHelp"}}</p>
           <p id="deliveryListStatus" class="small" role="status" aria-live="polite"></p>
           <ul id="deliveryList" class="delivery-management-list"></ul>
+          <button id="deliveryMore" type="button" class="btn btn-outline-light btn-sm" hidden onclick="refreshDeliveries(true)">{{$.UI.T "delivery.more"}}</button>
         </section>
 {{end}}

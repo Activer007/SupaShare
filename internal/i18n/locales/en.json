@@ -675,7 +675,7 @@
   "delivery.createHelp": "Create one link for 2–20 selected shares. Only your own ordinary shares are supported; each file keeps its password, expiry, and download limit.",
   "delivery.note": "Note (optional)",
   "delivery.expiry": "List expiry (optional)",
-  "delivery.expiryHelp": "Uses your local time. Leave empty for no list expiry; files still follow their own expiry rules.",
+  "delivery.expiryHelp": "Uses local time. Ordinary accounts: empty means 30 days, maximum 90 days. Administrators may leave empty for no expiry. Files retain their own expiry rules.",
   "delivery.link": "Delivery link",
   "delivery.revokeHelp": "Revoking or expiring a list only closes its page. Original file links and previously downloaded files are unaffected.",
   "delivery.yourLists": "My delivery lists",
@@ -723,5 +723,8 @@
   "quota.unavailable": "Quota is temporarily unavailable. Refresh to try again.",
   "quota.stale": "These values are out of date. The refresh failed; the previous values and update time are kept.",
   "quota.authRequired": "Your session expired or permission is missing. Sign in again and reopen this page.",
-  "quota.staleAuth": "These values are out of date. Your session expired or permission is missing; sign in again and reopen this page."
+  "quota.staleAuth": "These values are out of date. Your session expired or permission is missing; sign in again and reopen this page.",
+  "delivery.errorQuota": "Delivery capacity reached (100 per owner / 10,000 server-wide). Expired or revoked lists are retained for seven days before cleanup.",
+  "delivery.more": "Load more",
+  "delivery.moreAvailable": "More lists are available. Load all pages before retrying an uncertain creation."
 }

@@ -163,3 +163,37 @@ test('management requests reuse scoped permission tokens and JSON bodies', async
     assert.equal(JSON.parse(calls[1].options.body).title, '资料');
     assert.deepEqual(JSON.parse(calls[2].options.body), {token:'public-capability'});
 });
+
+test('paginated refresh retains uncertain guard until all pages are loaded and retries failed page', async () => {
+    const {context, nodes} = deliveryContext();
+    nodes.deliveryMore = {hidden:true,disabled:false};
+    vm.runInContext('deliveryCreateUncertain = true', context);
+    nodes.deliveryCreateSubmit.disabled = true;
+    const calls=[]; let fail=true;
+    context.deliveryRequest=async(action,payload,before)=>{
+        calls.push(before);
+        if (!before) return Object.assign([{token:'z',title:'first'}],{nextCursor:'z'});
+        if (fail) throw new Error('network');
+        return [{token:'a',title:'last'}];
+    };
+    await context.refreshDeliveries();
+    assert.equal(nodes.deliveryCreateSubmit.disabled,true);
+    assert.equal(nodes.deliveryMore.hidden,false);
+    await context.refreshDeliveries(true);
+    assert.equal(nodes.deliveryCreateSubmit.disabled,true);
+    assert.equal(nodes.deliveryMore.disabled,false);
+    fail=false;
+    await context.refreshDeliveries(true);
+    assert.deepEqual(calls,['','z','z']);
+    assert.equal(context.rendered.length,2);
+    assert.equal(nodes.deliveryMore.hidden,true);
+    assert.equal(nodes.deliveryCreateSubmit.disabled,false);
+});
+
+test('quota error is actionable and does not create an uncertain retry', async()=>{
+    const {context,nodes}=deliveryContext();
+    context.deliveryRequest=async()=>{throw Object.assign(new Error('limit'),{status:429});};
+    await context.createDelivery({preventDefault(){}});
+    assert.match(nodes.deliveryStatus.textContent,/delivery.errorQuota/);
+    assert.equal(nodes.deliveryCreateSubmit.disabled,false);
+});

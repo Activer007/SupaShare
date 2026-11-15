@@ -3,16 +3,22 @@
 let deliveryCreating = false;
 let deliveryCreateUncertain = false;
 let deliveryPendingFiles = null;
+let deliveryNextCursor = '';
+let deliveryItems = [];
+let deliveryListCanResolveUncertain = false;
 
-async function deliveryRequest(action, payload) {
+async function deliveryRequest(action, payload, before = '') {
     const permissions = {list: 'PERM_VIEW', create: 'PERM_UPLOAD', revoke: 'PERM_DELETE'};
     const token = await getToken(permissions[action], false);
     const options = {method: action === 'list' ? 'GET' : 'POST',
         headers: {'Content-Type': 'application/json', apikey: token}};
     if (payload !== undefined) options.body = JSON.stringify(payload);
-    const response = await fetch(`./api/deliveries/${action}`, options);
+    const suffix = action === 'list' && before ? `?before=${encodeURIComponent(before)}` : '';
+    const response = await fetch(`./api/deliveries/${action}${suffix}`, options);
     if (!response.ok) throw await apiFailure(response);
-    return response.json();
+    const result = await response.json();
+    if (action === 'list' && Array.isArray(result)) result.nextCursor = response.headers?.get('X-Next-Cursor') || '';
+    return result;
 }
 
 function selectedDeliveryFiles() {
@@ -73,6 +79,7 @@ function openDeliveryCreate(files, contextLabel = '') {
 }
 
 function deliveryFailure(failure) {
+    if (failure.status === 429) return t('delivery.errorQuota');
     if (failure.status === 401 || failure.status === 403) return t('delivery.errorPermission');
     if (failure.status === 400 || failure.status === 404 || failure.status === 409) return t('delivery.errorInvalid');
     return t('delivery.errorGeneric');
@@ -189,20 +196,26 @@ function renderDeliveries(items) {
     }
 }
 
-async function refreshDeliveries() {
+async function refreshDeliveries(more = false) {
     const button = document.getElementById('deliveryRefresh');
-    if (button.disabled) return;
+    if (button.disabled || (more && !deliveryNextCursor)) return;
     button.disabled = true;
     const status = document.getElementById('deliveryListStatus');
     // A query already in flight before an uncertain write cannot confirm it.
-    const checkingUncertain = deliveryCreateUncertain;
+    if (!more) deliveryListCanResolveUncertain = deliveryCreateUncertain;
+    const checkingUncertain = deliveryListCanResolveUncertain;
+    const moreButton = document.getElementById('deliveryMore');
+    if (moreButton) moreButton.disabled = true;
     status.textContent = t('common.loading');
     try {
-        const items = await deliveryRequest('list');
+        const items = await deliveryRequest('list', undefined, more ? deliveryNextCursor : '');
         if (!Array.isArray(items)) throw new Error('invalid delivery list');
-        renderDeliveries(items);
-        status.textContent = '';
-        if (checkingUncertain && deliveryCreateUncertain) {
+        deliveryNextCursor = items.nextCursor || '';
+        deliveryItems = more ? [...deliveryItems, ...items] : items;
+        renderDeliveries(deliveryItems);
+        if (moreButton) moreButton.hidden = !deliveryNextCursor;
+        status.textContent = deliveryNextCursor ? t('delivery.moreAvailable') : '';
+        if (checkingUncertain && deliveryCreateUncertain && !deliveryNextCursor) {
             deliveryCreateUncertain = false;
             document.getElementById('deliveryCreateSubmit').disabled = deliveryCreating;
             document.getElementById('deliveryStatus').textContent = t('delivery.inspectBeforeRetry');
@@ -211,6 +224,7 @@ async function refreshDeliveries() {
         status.textContent = t('delivery.listFailed');
     } finally {
         button.disabled = false;
+        if (moreButton) moreButton.disabled = false;
     }
 }
 

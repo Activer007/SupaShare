@@ -25,6 +25,9 @@ type Database interface {
 	BindOIDCIdentity(string, string, int) error
 	ListOIDCIdentities() ([]models.OIDCIdentity, error)
 	InsertDelivery(context.Context, models.Delivery) (bool, error)
+	CreateDeliveryLimited(context.Context, models.Delivery, int64) (bool, error)
+	ListDeliveriesPage(context.Context, int, string, int) ([]models.Delivery, error)
+	PruneDeliveries(context.Context, int64, int) (int, error)
 	ReadDelivery(context.Context, string) (models.Delivery, bool, error)
 	ListDeliveries(context.Context, int) ([]models.Delivery, error)
 	ReadAllDeliveries(context.Context) ([]models.Delivery, error)

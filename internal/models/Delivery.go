@@ -1,6 +1,9 @@
 package models
 
 import (
+	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -18,6 +21,13 @@ type Delivery struct {
 }
 
 const MaxDeliveryFiles = 20
+const MaxDeliveriesPerOwner = 100
+const MaxDeliveriesGlobal = 10000
+const DeliveryRetentionSeconds int64 = 7 * 86400
+const DeliveryDefaultLifetime int64 = 30 * 86400
+const DeliveryMaxLifetime int64 = 90 * 86400
+
+var ErrDeliveryQuota = errors.New("delivery capacity reached")
 
 // ValidDeliveryToken checks the public capability's URL-safe representation.
 // The creation service is responsible for generating at least 128 random bits.
@@ -51,4 +61,18 @@ func (d Delivery) Valid() bool {
 		seen[id] = true
 	}
 	return true
+}
+
+// EncodeDeliveryCursor preserves chronological keyset order without server state.
+func EncodeDeliveryCursor(d Delivery) string { return fmt.Sprintf("%020d.%s", d.CreatedAt, d.Token) }
+func DecodeDeliveryCursor(cursor string) (int64, string, error) {
+	if len(cursor) < 43 || len(cursor) > 149 || cursor[20] != '.' {
+		return 0, "", errors.New("invalid delivery cursor")
+	}
+	n, err := strconv.ParseInt(cursor[:20], 10, 64)
+	token := cursor[21:]
+	if err != nil || n <= 0 || !ValidDeliveryToken(token) || fmt.Sprintf("%020d", n) != cursor[:20] {
+		return 0, "", errors.New("invalid delivery cursor")
+	}
+	return n, token, nil
 }

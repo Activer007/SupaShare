@@ -675,7 +675,7 @@
   "delivery.createHelp": "用当前所选的 2～20 个分享创建一条清单链接。仅支持你自己的普通分享；各文件保留原密码、到期时间和下载次数限制。",
   "delivery.note": "交付说明（可选）",
   "delivery.expiry": "清单到期时间（可选）",
-  "delivery.expiryHelp": "按你所在的本地时间填写。留空表示清单不设到期时间，各文件仍遵循原到期规则。",
+  "delivery.expiryHelp": "按本地时间填写。普通账号留空默认30天，最长90天；管理员留空可不设期限。文件仍遵循原到期规则。",
   "delivery.link": "交付清单链接",
   "delivery.revokeHelp": "撤销或到期仅关闭清单入口，不会撤销原文件链接，也不会删除已下载的文件。",
   "delivery.yourLists": "我的交付清单",
@@ -723,5 +723,8 @@
   "quota.unavailable": "额度暂不可用，请点击刷新重试。",
   "quota.stale": "额度数据已过时。刷新失败，已保留上次的数值和更新时间。",
   "quota.authRequired": "登录已失效或权限不足，请重新登录后重新打开此页。",
-  "quota.staleAuth": "额度数据已过时。登录已失效或权限不足，请重新登录后重新打开此页。"
+  "quota.staleAuth": "额度数据已过时。登录已失效或权限不足，请重新登录后重新打开此页。",
+  "delivery.errorQuota": "清单数量已达上限（每人100／全站10,000）。过期或撤销的清单保留7天后清理。",
+  "delivery.more": "加载更多",
+  "delivery.moreAvailable": "还有更多清单。创建结果不确定时，请加载全部页面后再判断是否重试。"
 }
