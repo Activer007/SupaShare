@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -595,6 +596,14 @@ func dispatchChunkCompletion(w http.ResponseWriter, task *fileupload.PreparedCom
 }
 
 func completePreparedChunk(w http.ResponseWriter, task *fileupload.PreparedCompletion, user models.User, params models.UploadParameters, detached bool) {
+	if task == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("recovered panic in completePreparedChunk: %v", r)
+		}
+	}()
 	// Run finishes storage work before returning. Logging still reads the
 	// database, so service shutdown must wait through the entire worker tail.
 	defer task.Done()
@@ -1749,12 +1758,13 @@ func apiUploadRequestListSingle(w http.ResponseWriter, r requestParser, user mod
 }
 
 func isAuthorisedForApi(r *http.Request, routing apiRoute) (models.User, models.ApiKey, bool) {
-	keyId := r.Header.Get("apikey")
-	if err := ratelimiter.WaitOnApiAuthentication(r.Context(), logging.GetIpAddress(r)); err != nil {
+	if err := r.Context().Err(); err != nil {
 		return models.User{}, models.ApiKey{}, false
 	}
+	keyId := r.Header.Get("apikey")
 	user, apiKey, ok := isValidApiKey(keyId, true, routing.ApiPerm)
 	if !ok {
+		_ = ratelimiter.WaitOnApiAuthentication(r.Context(), logging.GetIpAddress(r))
 		return models.User{}, models.ApiKey{}, false
 	}
 	// Returns false if a public upload key is used for non-public api call or vice versa

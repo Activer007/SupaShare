@@ -1080,12 +1080,17 @@ func cleanInvalidFileRequests() {
 	}
 	files := database.GetAllMetadata()
 	for _, fileRequest := range orphaned {
+		allDeleted := true
 		for _, file := range files {
 			if file.UploadRequestId == fileRequest.Id {
-				DeleteFile(file.Id, true)
+				if !DeleteFile(file.Id, true) {
+					allDeleted = false
+				}
 			}
 		}
-		database.DeleteFileRequest(fileRequest)
+		if allDeleted {
+			database.DeleteFileRequest(fileRequest)
+		}
 	}
 }
 
