@@ -1,7 +1,8 @@
 package redis
 
 import (
-	"github.com/Activer007/SupaShare/internal/helper"
+	"log"
+
 	redigo "github.com/gomodule/redigo/redis"
 )
 
@@ -20,5 +21,7 @@ func (p DatabaseProvider) updateUsage(id, field string, timestamp int64) {
 	conn := p.pool.Get()
 	defer conn.Close()
 	_, err := updateExistingUsage.Do(conn, p.dbPrefix+id, field, timestamp)
-	helper.Check(err)
+	if err != nil {
+		log.Printf("updateUsage failed for %s (%s): %v", id, field, err)
+	}
 }

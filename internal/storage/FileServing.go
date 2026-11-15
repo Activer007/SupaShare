@@ -747,7 +747,9 @@ func ServeFile(file models.File, w http.ResponseWriter, r *http.Request, forceDo
 func serveAdmittedFile(file models.File, w http.ResponseWriter, r *http.Request, forceDownload, forceDecryption bool) bool {
 
 	logging.LogDownload(file, r, configuration.Get().SaveIp)
-	go serverstats.AddTraffic(uint64(file.SizeBytes))
+	if file.SizeBytes > 0 {
+		go serverstats.AddTraffic(uint64(file.SizeBytes))
+	}
 	response := &downloadResponse{ResponseWriter: w}
 	w = response
 
@@ -865,7 +867,9 @@ func ServeFilesAsZip(files []models.File, filename string, w http.ResponseWriter
 			panic(http.ErrAbortHandler)
 		}
 		logging.LogDownload(file, r, saveIp)
-		go serverstats.AddTraffic(uint64(file.SizeBytes))
+		if file.SizeBytes > 0 {
+			go serverstats.AddTraffic(uint64(file.SizeBytes))
+		}
 		statusIDs = append(statusIDs, downloadstatus.SetDownload(file))
 		if err := serveZipMember(r.Context(), entryWriter, file); err != nil {
 			log.Print("Archive download interrupted")
@@ -979,6 +983,11 @@ func CleanUp(periodic bool) {
 			time.AfterFunc(time.Hour, func() { CleanUp(true) })
 		}()
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("recovered panic in CleanUp: %v", r)
+		}
+	}()
 	// Session cleanup takes its own per-upload gate before touching staged
 	// input; it must run outside canonical publication/reference locks.
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1059,18 +1068,24 @@ func cleanInvalidApiKeys() {
 // this could cause issues otherwise.
 func cleanInvalidFileRequests() {
 	users := getUserMap()
-	for _, fileRequest := range database.GetAllFileRequests() {
-		_, exists := users[fileRequest.UserId]
-		if !exists {
-			files := database.GetAllMetadata()
-			for _, file := range files {
-				if file.UploadRequestId == fileRequest.Id {
-					DeleteFile(file.Id, true)
-				}
-			}
-			database.DeleteFileRequest(fileRequest)
+	requests := database.GetAllFileRequests()
+	var orphaned []models.FileRequest
+	for _, req := range requests {
+		if _, exists := users[req.UserId]; !exists {
+			orphaned = append(orphaned, req)
 		}
-
+	}
+	if len(orphaned) == 0 {
+		return
+	}
+	files := database.GetAllMetadata()
+	for _, fileRequest := range orphaned {
+		for _, file := range files {
+			if file.UploadRequestId == fileRequest.Id {
+				DeleteFile(file.Id, true)
+			}
+		}
+		database.DeleteFileRequest(fileRequest)
 	}
 }
 

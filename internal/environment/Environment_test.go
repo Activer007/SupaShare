@@ -18,6 +18,15 @@ func TestMain(m *testing.M) {
 }
 
 func TestTempDir(t *testing.T) {
+	origTmp := os.Getenv("TMPDIR")
+	_ = os.Unsetenv("TMPDIR")
+	t.Cleanup(func() {
+		if origTmp != "" {
+			_ = os.Setenv("TMPDIR", origTmp)
+		} else {
+			_ = os.Unsetenv("TMPDIR")
+		}
+	})
 	test.IsEqualString(t, os.Getenv("TMPDIR"), "")
 	New()
 	test.IsEqualString(t, os.Getenv("TMPDIR"), "")
