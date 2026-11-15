@@ -460,6 +460,11 @@ function setModalValues(id, name, maxFiles, maxSize, expiry, notes, allowedDownl
         document.getElementById("mc_maxsize").checked = true;
     }
 
+    // Keep legacy deadlines (including permanent requests) until explicitly edited.
+    const expiryCheckbox = document.getElementById("mc_expiry");
+    expiryCheckbox.originalExpiry = Number(expiry || 0);
+    expiryCheckbox.disabled = !id || Number(expiry || 0) !== 0;
+    if (!id && !Number(expiry)) expiry = Math.floor(Date.now() / 1000) + 5 * 86400;
     if (expiry === null || expiry == 0) {
         const defaultDate = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60;
         document.getElementById("mi_expiry").disabled = true;
@@ -524,7 +529,9 @@ async function saveFileRequest() {
         if (!field.disabled && !field.reportValidity()) return;
     }
     await runModalSave('addEditModal', buttonSave, async () => {
-        if (expiry !== 0 && (!Number.isFinite(Number(expiry)) || Number(expiry) <= Date.now()/1000)) throw new Error(t('settings.invalidExpiry'));
+        const unchangedExpiry = !!id && Number(expiry) === document.getElementById("mc_expiry").originalExpiry;
+        if (!unchangedExpiry && (!Number.isFinite(Number(expiry)) || Number(expiry) <= Date.now()/1000 ||
+            Number(expiry) > Date.now()/1000 + 90 * 86400)) throw new Error(t('request.invalidExpiryWindow'));
         if (allowedDownloads !== undefined && (!Number.isInteger(allowedDownloads) || allowedDownloads < 1 || allowedDownloads > 10)) throw new Error(t('request.invalidDownloads'));
         const data = await apiURequestSave(id, name, maxFiles, maxSize, expiry, notes, allowedDownloads);
         insertOrReplaceFileRequest(data);

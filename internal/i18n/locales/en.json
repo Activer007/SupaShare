@@ -726,5 +726,11 @@
   "quota.staleAuth": "These values are out of date. Your session expired or permission is missing; sign in again and reopen this page.",
   "delivery.errorQuota": "Delivery capacity reached (100 per owner / 10,000 server-wide). Expired or revoked lists are retained for seven days before cleanup.",
   "delivery.more": "Load more",
-  "delivery.moreAvailable": "More lists are available. Load all pages before retrying an uncertain creation."
+  "delivery.moreAvailable": "More lists are available. Load all pages before retrying an uncertain creation.",
+  "request.pages": "Collection pages",
+  "request.firstPage": "Newest collections",
+  "request.nextPage": "Next page",
+  "request.pageHelp": "The count and refresh apply to this page only. Use Next page to view older collections.",
+  "request.expiryPolicy": "New requests default to 5 days and must expire within 90 days. Existing deadlines stay unchanged unless edited. Expired invitation credentials are revoked; uploaded files are not automatically deleted. Retained requests count toward the request limit.",
+  "request.invalidExpiryWindow": "Choose a future expiry within 90 days. Existing deadlines may be kept unchanged."
 }

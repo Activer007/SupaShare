@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1574,6 +1575,7 @@ func apiURequestSave(w http.ResponseWriter, r requestParser, user models.User, _
 		panic("invalid parameter passed")
 	}
 	uploadRequest := models.FileRequest{}
+	var expected models.FileRequest
 	isNewRequest := request.Id == ""
 
 	if !isUserAllowedUnlimited(request, isNewRequest, user) {
@@ -1608,17 +1610,7 @@ func apiURequestSave(w http.ResponseWriter, r requestParser, user models.User, _
 			sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to edit this upload request")
 			return
 		}
-	} else {
-		if _, exists := database.GetFileRequest(uploadRequest.Id); exists {
-			sendFileDeletionError(w, uploadquota.ErrConflict, false)
-			return
-		}
-		apiKey, err := generateFileRequestKey(user.Id, uploadRequest.Id)
-		if err != nil {
-			sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "Unable to create file request credential")
-			return
-		}
-		uploadRequest.ApiKey = apiKey.Id
+		expected = uploadRequest
 	}
 
 	if request.Name == "" {
@@ -1643,8 +1635,59 @@ func apiURequestSave(w http.ResponseWriter, r requestParser, user models.User, _
 	if request.IsNotesSet {
 		uploadRequest.Notes = request.Notes
 	}
-	database.SaveFileRequest(uploadRequest)
+
+	now := time.Now().Unix()
+	if isNewRequest || (request.IsExpirySet && uploadRequest.Expiry != expected.Expiry) {
+		// Legacy permanent requests keep their expiry during unrelated edits.
+		if !user.IsAdmin() && uploadRequest.Expiry == 0 {
+			uploadRequest.Expiry = now + models.FileRequestDefaultLifetime
+		}
+		if uploadRequest.Expiry < 0 || (uploadRequest.Expiry != 0 && uploadRequest.Expiry <= now) ||
+			(!user.IsAdmin() && uploadRequest.Expiry > now+models.FileRequestMaxLifetime) {
+			sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, "File request expiry must be in the future; ordinary accounts allow at most 90 days")
+			return
+		}
+	}
+	if len(uploadRequest.Name) > 800 || len(uploadRequest.Notes) > 8000 {
+		sendError(w, http.StatusBadRequest, errorcodes.InvalidUserInput, "File request text too long")
+		return
+	}
+	var saved bool
+	if isNewRequest {
+		if _, err = database.PruneFileRequests(ctx, now, 100); err == nil {
+			_, err = createFileRequestKey(user.Id, uploadRequest.Id, rand.Read, func(key models.ApiKey) (bool, error) {
+				key.Expiry = uploadRequest.Expiry
+				uploadRequest.ApiKey = key.Id
+				var e error
+				saved, e = database.CreateFileRequestLimited(ctx, uploadRequest, key)
+				return saved, e
+			})
+		}
+	} else {
+		saved, err = database.UpdateFileRequest(ctx, expected, uploadRequest)
+	}
+	if errors.Is(err, uploadquota.ErrConflict) {
+		sendError(w, http.StatusConflict, errorcodes.ResourceCanNotBeEdited, "File request changed or invitation expired; refresh before retry")
+		return
+	}
+	if errors.Is(err, models.ErrFileRequestQuota) {
+		sendError(w, http.StatusTooManyRequests, errorcodes.InvalidUserInput, "File request retained-record or credential quota reached")
+		return
+	}
+	if err != nil {
+		sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "File request save unavailable; verify list before retry")
+		return
+	}
+	if !saved {
+		sendError(w, http.StatusConflict, errorcodes.InvalidUserInput, "File request changed or its invitation expired; refresh before retry")
+		return
+	}
 	uploadRequest, ok = filerequest.Get(uploadRequest.Id)
+	if !ok {
+		sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "File request saved; refresh list to verify")
+		return
+	}
+
 	if isNewRequest {
 		logging.LogCreateFileRequest(uploadRequest, user)
 	} else {
@@ -1655,16 +1698,29 @@ func apiURequestSave(w http.ResponseWriter, r requestParser, user models.User, _
 	_, _ = w.Write(result)
 }
 
-func apiUploadRequestList(w http.ResponseWriter, _ requestParser, user models.User, _ models.ApiKey) {
-	userRequests := make([]models.FileRequest, 0)
-	for _, request := range filerequest.GetAll() {
-		if authorization.Authorize(user, authorization.ReadFile, request.UserId) {
-			userRequests = append(userRequests, authorization.FileRequestForViewer(user, request))
-		}
+func apiUploadRequestList(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
+	request, ok := r.(*paramURequestPage)
+	if !ok {
+		request = &paramURequestPage{Limit: 50}
 	}
-	result, err := json.Marshal(userRequests)
-	helper.Check(err)
-	_, _ = w.Write(result)
+	owner := user.Id
+	if user.HasPermissionListOtherUploads() {
+		owner = 0
+	}
+	ctx, cancel := context.WithTimeout(chunkRequestContext(request.Request), 5*time.Second)
+	defer cancel()
+	rows, next, err := filerequest.Page(ctx, owner, request.Before, request.Limit)
+	if err != nil {
+		sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "File request list unavailable")
+		return
+	}
+	for i := range rows {
+		rows[i] = authorization.FileRequestForViewer(user, rows[i])
+	}
+	if next != "" {
+		w.Header().Set("X-Next-Cursor", next)
+	}
+	_ = json.NewEncoder(w).Encode(rows)
 }
 
 func apiUploadRequestListSingle(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {
@@ -1673,13 +1729,18 @@ func apiUploadRequestListSingle(w http.ResponseWriter, r requestParser, user mod
 		panic("invalid parameter passed")
 	}
 
-	uploadRequest, ok := filerequest.Get(request.Id)
+	uploadRequest, ok := database.GetFileRequest(request.Id)
 	if !ok {
 		sendError(w, http.StatusNotFound, errorcodes.NotFound, "FileRequest does not exist with the given ID")
 		return
 	}
 	if !authorization.Authorize(user, authorization.ReadFile, uploadRequest.UserId) {
 		sendError(w, http.StatusUnauthorized, errorcodes.NoPermission, "No permission to show this upload request")
+		return
+	}
+	uploadRequest, ok = filerequest.Get(request.Id)
+	if !ok {
+		sendError(w, http.StatusServiceUnavailable, errorcodes.InternalServer, "File request details unavailable")
 		return
 	}
 	result, err := json.Marshal(authorization.FileRequestForViewer(user, uploadRequest))

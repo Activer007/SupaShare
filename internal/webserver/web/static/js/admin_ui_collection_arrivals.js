@@ -49,10 +49,11 @@ function renderCollectionArrivalNotice(requestId) {
     return true;
 }
 
-function processCollectionArrivalSnapshots(snapshots) {
+function processCollectionArrivalSnapshots(snapshots, requestedIds) {
     const visibleIDs = new Set(snapshots.map(snapshot => snapshot.id));
+    const requested = requestedIds ? new Set(requestedIds) : null;
     for (const [requestId, state] of collectionArrivalStates) {
-        if (!visibleIDs.has(requestId)) {
+        if (!visibleIDs.has(requestId) && (!requested || requested.has(requestId))) {
             state.active = false;
             setCollectionArrivalAccess(requestId, false);
             renderCollectionArrivalNotice(requestId);

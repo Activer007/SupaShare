@@ -181,3 +181,16 @@ test('fifty unavailable arrivals rotate behind a later valid file without issuin
     await settle();
     assert.equal(calls.length,2);
 });
+
+test('a late paged refresh does not revoke a collection created after the refresh began',async()=>{
+    const {context,nodes,init,addRequest}=arrivalContext({r:[]});init();
+    let finish;
+    context.apiURequestList=()=>new Promise(resolve=>{finish=resolve;});
+    const refreshing=context.refreshCollectionSummaries();
+    addRequest('new');
+    context.seedCollectionArrivalBaseline('new',[]);
+    finish({requests:[],serverTime:1000});
+    assert.equal(await refreshing,true);
+    assert.equal(nodes['row-r'].dataset.collectionAccess,'unavailable');
+    assert.equal(nodes['row-new'].dataset.collectionAccess,'available');
+});

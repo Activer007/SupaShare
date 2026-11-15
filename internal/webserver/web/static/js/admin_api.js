@@ -1068,16 +1068,39 @@ async function apiQuotaSummary() {
     }
 }
 
-async function apiURequestList() {
+async function apiURequestList(visibleIds) {
     try {
         const token = await getToken('PERM_MANAGE_FILE_REQUESTS', false);
+        // A paginated list is not a complete authorization snapshot. Refresh
+        // only rendered IDs, with bounded parallelism, including on older pages.
+        if (Array.isArray(visibleIds)) {
+            const ids = [...new Set(visibleIds)];
+            const requests = [];
+            let next = 0, serverTime = null;
+            await Promise.all(Array.from({length: Math.min(4, ids.length)}, async () => {
+                while (next < ids.length) {
+                    const id = ids[next++];
+                    const response = await fetch('./api/uploadrequest/list/' + encodeURIComponent(id), {
+                        method: 'GET', headers: {apikey: token}, cache: 'no-store'
+                    });
+                    if (response.status === 404) continue;
+                    if (!response.ok) throw await apiFailure(response);
+                    const record = await response.json();
+                    if (!record || record.id !== id) throw new Error('invalid collection summary');
+                    requests.push(record);
+                    const date = Date.parse(response.headers.get('Date'));
+                    if (Number.isFinite(date)) serverTime = date / 1000;
+                }
+            }));
+            return {requests, serverTime};
+        }
         const response = await fetch('./api/uploadrequest/list', {
             method: 'GET', headers: {apikey: token}, cache: 'no-store'
         });
         if (!response.ok) throw await apiFailure(response);
         const requests = await response.json();
         const serverDate = Date.parse(response.headers.get('Date'));
-        return {requests, serverTime: Number.isFinite(serverDate) ? serverDate / 1000 : null};
+        return {requests, serverTime: Number.isFinite(serverDate) ? serverDate / 1000 : null, nextCursor: response.headers.get("X-Next-Cursor") || ""};
     } catch (failure) {
         if (failure.status === 401 || failure.status === 403) storedTokens.delete('PERM_MANAGE_FILE_REQUESTS');
         throw failure;

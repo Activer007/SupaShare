@@ -1511,3 +1511,14 @@ func (p *paramURequestListSingle) ParseRequest(r *http.Request) error {
 func (p *paramURequestListSingle) New() requestParser {
 	return &paramURequestListSingle{}
 }
+
+// ParseRequest parses the header file. As paramURequestPage has no fields with the
+// tag header, this method does nothing, except calling ProcessParameter()
+func (p *paramURequestPage) ParseRequest(r *http.Request) error {
+	return p.ProcessParameter(r)
+}
+
+// New returns a new instance of paramURequestPage struct
+func (p *paramURequestPage) New() requestParser {
+	return &paramURequestPage{}
+}

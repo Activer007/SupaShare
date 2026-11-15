@@ -55,10 +55,10 @@ func (p DatabaseProvider) GetApiKeyByPublicKey(publicKey string) (string, bool) 
 
 // SaveApiKey saves the API key to the database
 func (p DatabaseProvider) SaveApiKey(apikey models.ApiKey) {
-	p.setHashMap(p.buildArgs(prefixApiKeys + apikey.Id).AddFlat(apikey))
-	if apikey.Expiry != 0 {
-		p.setExpiryAt(prefixApiKeys+apikey.Id, apikey.Expiry)
-	}
+	conn := p.pool.Get()
+	defer conn.Close()
+	_, err := indexedCredential.Do(conn, redigo.Args{}.Add(p.dbPrefix+prefixApiKeys+apikey.Id, p.dbPrefix+frIndex, "save", apikey.UserId, apikey.UploadRequestId, apikey.Expiry).AddFlat(apikey)...)
+	helper.Check(err)
 }
 
 var insertApiKey = redigo.NewScript(1, `
@@ -72,8 +72,8 @@ return 1
 func (p DatabaseProvider) InsertApiKey(apikey models.ApiKey) (bool, error) {
 	conn := p.pool.Get()
 	defer conn.Close()
-	args := redigo.Args{}.Add(p.dbPrefix + prefixApiKeys + apikey.Id).Add(apikey.Expiry).AddFlat(apikey)
-	count, err := redigo.Int(insertApiKey.Do(conn, args...))
+	args := redigo.Args{}.Add(p.dbPrefix+prefixApiKeys+apikey.Id, p.dbPrefix+frIndex, "insert", apikey.UserId, apikey.UploadRequestId, apikey.Expiry).AddFlat(apikey)
+	count, err := redigo.Int(indexedCredential.Do(conn, args...))
 	return count == 1, err
 }
 
@@ -84,7 +84,10 @@ func (p DatabaseProvider) UpdateTimeApiKey(apikey models.ApiKey) {
 
 // DeleteApiKey deletes an API key with the given ID
 func (p DatabaseProvider) DeleteApiKey(id string) {
-	p.deleteKey(prefixApiKeys + id)
+	conn := p.pool.Get()
+	defer conn.Close()
+	_, err := indexedCredential.Do(conn, p.dbPrefix+prefixApiKeys+id, p.dbPrefix+frIndex, "delete", 0, "", 0)
+	helper.Check(err)
 }
 
 // Scan and insert execute in one script: no other client can pass the same remaining

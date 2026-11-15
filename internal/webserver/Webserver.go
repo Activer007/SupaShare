@@ -521,8 +521,42 @@ func showUploadRequest(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "admin")
 		return
 	}
+	before := r.URL.Query().Get("before")
+	if before != "" {
+		if _, _, err := models.ParseFileRequestCursor(before); err != nil {
+			http.Error(w, "Invalid page cursor", http.StatusBadRequest)
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := view.loadFileRequestPage(ctx, userId, before); err != nil {
+		http.Error(w, "File request list unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	err = renderPage(w, r, "uploadreq", view)
 	helper.CheckIgnoreTimeout(err)
+}
+
+func (view *AdminView) loadFileRequestPage(ctx context.Context, user models.User, before string) error {
+	owner := user.Id
+	if user.HasPermissionListOtherUploads() {
+		owner = 0
+	}
+	rows, next, err := filerequest.Page(ctx, owner, before, 50)
+	if err != nil {
+		return err
+	}
+	view.FileRequests = nil
+	for _, row := range rows {
+		if _, ok := view.UserMap[row.UserId]; !ok {
+			continue
+		}
+		row.Files = sortMetaData(row.Files)
+		view.FileRequests = append(view.FileRequests, authorization.FileRequestForViewer(user, row))
+	}
+	view.FileRequestNextCursor = next
+	return nil
 }
 
 // Handling of /api
@@ -880,6 +914,7 @@ type AdminView struct {
 	ChunkSize             int
 	MaxParallelUploads    int
 	MinLengthPassword     int
+	FileRequestNextCursor string
 	FileRequestMaxFiles   int
 	FileRequestMaxSize    int
 	TotalFiles            int
@@ -988,20 +1023,7 @@ func (u *AdminView) convertGlobalConfig(view int, user models.User) *AdminView {
 			u.FileRequestMaxFiles = configuration.GetEnvironment().MaxFilesGuestUpload
 			u.FileRequestMaxSize = configuration.GetEnvironment().MaxSizeGuestUploadMb
 		}
-		for _, fileRequest := range filerequest.GetAll() {
-			// Double-checking if the owner of the file request exists
-			// If the user was manually deleted from the database, this could lead to a crash
-			// in the file request view
-			_, ok := u.UserMap[fileRequest.UserId]
-			if !ok {
-				continue
-			}
-			if !authorization.Authorize(user, authorization.ReadFile, fileRequest.UserId) {
-				continue
-			}
-			fileRequest.Files = sortMetaData(fileRequest.Files)
-			u.FileRequests = append(u.FileRequests, authorization.FileRequestForViewer(user, fileRequest))
-		}
+
 	}
 
 	showApiMenu := true

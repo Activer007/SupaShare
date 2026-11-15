@@ -179,3 +179,39 @@ test('summary refresh reuses the management permission and server Date without c
     assert.equal(presentation.apikey,undefined);
     assert.doesNotMatch(JSON.stringify(presentation),/PUBLIC_UPLOAD_CAPABILITY|private-management-token/);
 });
+
+test('refresh queries rendered IDs rather than treating the first list page as complete',async()=>{
+    const {context}=statusContext();
+    let ids;
+    context.apiURequestList=async requested=>{ids=requested;return {requests:[summary()],serverTime:1000};};
+    assert.equal(await context.refreshCollectionSummaries(),true);
+    assert.deepEqual(Array.from(ids),['r']);
+});
+
+test('rendered request refresh bounds concurrency and handles a deleted record without scanning pages',async()=>{
+    const {context}=statusContext();
+    vm.runInContext(fs.readFileSync(path.join(base,'admin_api.js'),'utf8'),context);
+    context.getToken=async()=> 'fixture';
+    let active=0,maxActive=0;
+    const urls=[];
+    context.fetch=async url=>{
+        urls.push(url);active++;maxActive=Math.max(maxActive,active);
+        await new Promise(resolve=>setImmediate(resolve));
+        active--;
+        const id=url.split('/').at(-1);
+        return {ok:id!=='deleted',status:id==='deleted'?404:200,json:async()=>summary({id}),
+            headers:{get:()=>null}};
+    };
+    const ids=['old1','old2','old3','old4','old5','deleted'];
+    const result=await context.apiURequestList(ids);
+    assert.equal(maxActive,4);
+    assert.equal(result.requests.length,5);
+    assert.deepEqual(urls.sort(),ids.map(id=>'./api/uploadrequest/list/'+id).sort());
+});
+
+test('request pages retain server-rendered detail rows and expose the next cursor',()=>{
+    const template=fs.readFileSync(path.join(__dirname,'../../internal/webserver/web/templates/html_uploadrequest.tmpl'),'utf8');
+    assert.match(template,/href="\?before={{.FileRequestNextCursor}}"/);
+    assert.match(template,/request.pageHelp/);
+    assert.match(template,/range .Files/);
+});

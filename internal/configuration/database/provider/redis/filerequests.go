@@ -2,7 +2,9 @@ package redis
 
 import (
 	"cmp"
+	"context"
 	"slices"
+	"strconv"
 
 	"github.com/Activer007/SupaShare/internal/helper"
 	"github.com/Activer007/SupaShare/internal/models"
@@ -60,10 +62,17 @@ func sortFilerequests(users []models.FileRequest) []models.FileRequest {
 
 // SaveFileRequest stores the file request associated with the file in the database
 func (p DatabaseProvider) SaveFileRequest(request models.FileRequest) {
-	p.setHashMap(p.buildArgs(prefixFileRequests + request.Id).AddFlat(request))
+	helper.Check(p.writeFileRequestIndexed(context.Background(), request, false))
 }
 
 // DeleteFileRequest deletes a file request with the given ID
 func (p DatabaseProvider) DeleteFileRequest(request models.FileRequest) {
-	p.deleteKey(prefixFileRequests + request.Id)
+	c := p.pool.Get()
+	defer c.Close()
+	current, ok := p.GetFileRequest(request.Id)
+	if !ok {
+		return
+	}
+	_, err := c.Do("EVAL", `redis.call('DEL',KEYS[1]);redis.call('ZREM',KEYS[2],ARGV[1]);redis.call('ZREM',KEYS[3],ARGV[1]);redis.call('ZREM',KEYS[4],ARGV[2]);return 1`, 4, p.dbPrefix+prefixFileRequests+request.Id, p.dbPrefix+frIndex+"all", p.dbPrefix+frIndex+"owner:"+strconv.Itoa(current.UserId), p.dbPrefix+frIndex+"expiry", models.FileRequestCursor(current), current.Id)
+	helper.Check(err)
 }
