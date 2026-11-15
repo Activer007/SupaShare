@@ -83,6 +83,11 @@ type Limits struct {
 	RequestActive  int64
 	InstanceActive int64
 	StagingBytes   int64
+	// Zero selects finite shares of StagingBytes, never unlimited.
+	UserStagingBytes    int64
+	RequestStagingBytes int64
+	// Provider overwrites this from the current persisted owner role.
+	AdminStagingExempt bool
 }
 
 type Action string

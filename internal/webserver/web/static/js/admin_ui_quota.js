@@ -14,6 +14,16 @@ function quotaSummarySnapshot(input) {
         result[field] = value;
     }
     if (!Number.isFinite(new Date(result.asOf * 1000).getTime())) return null;
+    if (input.adminPolicy) {
+        const policy = {};
+        for (const field of ['userStagingBytes', 'requestStagingBytes', 'globalStagingBytes', 'ordinaryGlobalBytes', 'ordinaryRequestBytes']) {
+            const value = input.adminPolicy[field];
+            if (!Number.isSafeInteger(value) || value <= 0) return null;
+            policy[field] = value;
+        }
+        if (policy.requestStagingBytes > policy.userStagingBytes || policy.userStagingBytes > policy.globalStagingBytes) return null;
+        result.adminPolicy = Object.freeze(policy);
+    }
     return Object.freeze(result);
 }
 
@@ -32,6 +42,20 @@ function renderQuotaSummary(snapshot) {
     const bytes = document.getElementById('quotaBytes');
     bytes.textContent = `${formatQuotaBytes(snapshot.usedBytes)} / ${formatQuotaBytes(snapshot.limitBytes)}`;
     bytes.title = t('quota.exactBytes', {used: format(snapshot.usedBytes), limit: format(snapshot.limitBytes)});
+    const policyPanel = document.getElementById('quotaAdminPolicy');
+    if (policyPanel) {
+        policyPanel.hidden = !snapshot.adminPolicy;
+        if (snapshot.adminPolicy) {
+            bytes.textContent = t('quota.adminUsed', {used: formatQuotaBytes(snapshot.usedBytes)});
+            bytes.title = t('quota.adminExemption');
+            document.getElementById('quotaOrdinaryLimits').textContent = t('quota.ordinaryLimits', {
+                total: formatQuotaBytes(snapshot.limitBytes), logicalGlobal: formatQuotaBytes(snapshot.adminPolicy.ordinaryGlobalBytes), logicalRequest: formatQuotaBytes(snapshot.adminPolicy.ordinaryRequestBytes), files: format(snapshot.limitFiles),
+                user: formatQuotaBytes(snapshot.adminPolicy.userStagingBytes),
+                request: formatQuotaBytes(snapshot.adminPolicy.requestStagingBytes),
+                global: formatQuotaBytes(snapshot.adminPolicy.globalStagingBytes)
+            });
+        }
+    }
     const date = new Date(snapshot.asOf * 1000);
     const updated = document.getElementById('quotaUpdatedAt');
     updated.dateTime = date.toISOString();

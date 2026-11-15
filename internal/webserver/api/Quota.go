@@ -16,12 +16,35 @@ import (
 )
 
 type quotaSummaryOutput struct {
-	Available  bool  `json:"available"`
-	UsedBytes  int64 `json:"usedBytes"`
-	UsedFiles  int64 `json:"usedFiles"`
-	LimitBytes int64 `json:"limitBytes"`
-	LimitFiles int64 `json:"limitFiles"`
-	AsOf       int64 `json:"asOf"`
+	AdminPolicy *quotaAdminPolicy `json:"adminPolicy,omitempty"`
+	Available   bool              `json:"available"`
+	UsedBytes   int64             `json:"usedBytes"`
+	UsedFiles   int64             `json:"usedFiles"`
+	LimitBytes  int64             `json:"limitBytes"`
+	LimitFiles  int64             `json:"limitFiles"`
+	AsOf        int64             `json:"asOf"`
+}
+
+// AdminPolicy describes ordinary-user limits, never the administrator's remaining capacity.
+type quotaAdminPolicy struct {
+	OrdinaryRequestBytes int64 `json:"ordinaryRequestBytes"`
+	OrdinaryGlobalBytes  int64 `json:"ordinaryGlobalBytes"`
+	UserStagingBytes     int64 `json:"userStagingBytes"`
+	RequestStagingBytes  int64 `json:"requestStagingBytes"`
+	GlobalStagingBytes   int64 `json:"globalStagingBytes"`
+}
+
+func quotaPolicyForAdmin(user models.User, env environment.Environment) *quotaAdminPolicy {
+	if !user.IsAdmin() {
+		return nil
+	}
+	const mib = 1024 * 1024
+	limits := uploadquota.Limits{StagingBytes: env.UploadStagingMB * mib, UserStagingBytes: env.UploadUserStagingMB * mib, RequestStagingBytes: env.UploadRequestStagingMB * mib}
+	u, r, err := limits.StagingLimits()
+	if err != nil {
+		return nil
+	}
+	return &quotaAdminPolicy{OrdinaryRequestBytes: env.UploadRequestTotalMB * mib, OrdinaryGlobalBytes: env.UploadInstanceTotalMB * mib, UserStagingBytes: u, RequestStagingBytes: r, GlobalStagingBytes: limits.StagingBytes}
 }
 
 var errQuotaSummaryUnavailable = errors.New("quota summary unavailable")
@@ -72,5 +95,6 @@ func apiQuotaSummary(w http.ResponseWriter, parsed requestParser, user models.Us
 		}{Result: "error", Available: false, Code: errorcodes.InternalServer, Message: "Quota summary temporarily unavailable"})
 		return
 	}
+	summary.AdminPolicy = quotaPolicyForAdmin(user, configuration.GetEnvironment())
 	_ = json.NewEncoder(w).Encode(summary)
 }

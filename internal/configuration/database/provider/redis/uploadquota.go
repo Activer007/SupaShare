@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	randv2 "math/rand/v2"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,31 @@ func (p DatabaseProvider) ApplyUploadQuota(ctx context.Context, change uploadquo
 			if err != nil {
 				return uploadquota.Ledger{}, uploadquota.Reservation{}, nil, err
 			}
+		}
+		// WATCH the owner hash so a concurrent demotion invalidates admission.
+		effective.Limits.AdminStagingExempt = false
+		userKey := p.dbPrefix + prefixUsers + strconv.Itoa(change.Upload.UserID)
+		if _, err := redigo.DoContext(conn, ctx, "WATCH", userKey); err != nil {
+			return uploadquota.Ledger{}, uploadquota.Reservation{}, nil, err
+		}
+		values, err := redigo.Values(redigo.DoContext(conn, ctx, "HMGET", userKey, "id", "UserLevel"))
+		if err != nil {
+			return uploadquota.Ledger{}, uploadquota.Reservation{}, nil, err
+		}
+		if len(values) == 2 && values[0] != nil && values[1] != nil {
+			id, idErr := redigo.Int(values[0], nil)
+			rank, rankErr := redigo.Int(values[1], nil)
+			if idErr != nil || rankErr != nil {
+				return uploadquota.Ledger{}, uploadquota.Reservation{}, nil, uploadquota.ErrInvalid
+			}
+			effective.Limits.AdminStagingExempt = id > 0 && id == change.Upload.UserID && (rank == int(models.UserLevelSuperAdmin) || rank == int(models.UserLevelAdmin))
+		}
+		if effective.Limits.AdminStagingExempt {
+			// Administrator exemption concerns cumulative bytes only. File counts,
+			// single-file policy, concurrency and global physical staging remain intact.
+			effective.Limits.User.Bytes = math.MaxInt64
+			effective.Limits.Request.Bytes = math.MaxInt64
+			effective.Limits.Instance.Bytes = math.MaxInt64
 		}
 		files, err := p.quotaMetadata(ctx, conn)
 		if err != nil {

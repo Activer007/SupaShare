@@ -73,6 +73,9 @@ type Environment struct {
 
 	// Bounds durable staging declarations, separately from reception copies.
 	UploadStagingMB int64 `env:"UPLOAD_STAGING_MB" envDefault:"12288"`
+	// Zero selects a finite automatic share, not unlimited.
+	UploadUserStagingMB    int64 `env:"UPLOAD_USER_STAGING_MB" envDefault:"0"`
+	UploadRequestStagingMB int64 `env:"UPLOAD_REQUEST_STAGING_MB" envDefault:"0"`
 
 	// File Requests share these finite cumulative and active capacities. Their
 	// existing MaxSize remains a separate per-file restriction.
@@ -174,6 +177,19 @@ func (e Environment) ValidateWholeUploadLimits() error {
 			return fmt.Errorf("%s must fit an int64 byte budget", field.name)
 		}
 	}
+	user := e.UploadUserStagingMB
+	request := e.UploadRequestStagingMB
+	if user < 0 || request < 0 || user > e.UploadStagingMB {
+		return fmt.Errorf("staging shares must be nonnegative and within global staging budget")
+	}
+	// Compare in bytes, matching ledger defaults even for small odd MiB budgets.
+	userBytes := user * (1 << 20)
+	if user == 0 {
+		userBytes = e.UploadStagingMB * (1 << 20) / 2
+	}
+	if request > math.MaxInt64/(1<<20) || request*(1<<20) > userBytes {
+		return fmt.Errorf("request staging share must not exceed owner staging share")
+	}
 	return nil
 }
 
@@ -272,6 +288,7 @@ func parseWholeUploadEnvironment(result Environment) (Environment, error) {
 	result.UploadUserTotalMB, result.UploadUserMaxFiles, result.UploadUserActive = 5120, 1000, 4
 	result.UploadInstanceTotalMB, result.UploadInstanceMaxFiles, result.UploadInstanceActive = 20480, 5000, 8
 	result.UploadStagingMB = 12288
+	result.UploadUserStagingMB, result.UploadRequestStagingMB = 0, 0
 	for _, field := range []struct {
 		name   string
 		target *int64
@@ -283,6 +300,8 @@ func parseWholeUploadEnvironment(result Environment) (Environment, error) {
 		{"GOKAPI_UPLOAD_INSTANCE_MAX_FILES", &result.UploadInstanceMaxFiles},
 		{"GOKAPI_UPLOAD_INSTANCE_ACTIVE", &result.UploadInstanceActive},
 		{"GOKAPI_UPLOAD_STAGING_MB", &result.UploadStagingMB},
+		{"GOKAPI_UPLOAD_USER_STAGING_MB", &result.UploadUserStagingMB},
+		{"GOKAPI_UPLOAD_REQUEST_STAGING_MB", &result.UploadRequestStagingMB},
 	} {
 		if raw, exists := os.LookupEnv(field.name); exists {
 			value, err := strconv.ParseInt(raw, 10, 64)

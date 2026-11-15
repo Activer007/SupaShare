@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -53,6 +54,24 @@ func (p DatabaseProvider) ApplyUploadQuota(ctx context.Context, change uploadquo
 			if err != nil {
 				return err
 			}
+		}
+		// Never trust an exemption supplied by callers. Resolve the current owner
+		// inside the same transaction as admission; cleanup needs no role lookup.
+		effective.Limits.AdminStagingExempt = false
+		if change.Action != uploadquota.Abort && change.Action != uploadquota.ReleaseStaging {
+			var rank int64
+			err := conn.QueryRowContext(ctx, "SELECT UserLevel FROM Users WHERE Id = ?", change.Upload.UserID).Scan(&rank)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			effective.Limits.AdminStagingExempt = err == nil && change.Upload.UserID > 0 && (rank == int64(models.UserLevelSuperAdmin) || rank == int64(models.UserLevelAdmin))
+		}
+		if effective.Limits.AdminStagingExempt {
+			// Administrator exemption concerns cumulative bytes only. File counts,
+			// single-file policy, concurrency and global physical staging remain intact.
+			effective.Limits.User.Bytes = math.MaxInt64
+			effective.Limits.Request.Bytes = math.MaxInt64
+			effective.Limits.Instance.Bytes = math.MaxInt64
 		}
 		var files map[string]models.File
 		// Cleanup must remain possible when unrelated metadata is malformed.

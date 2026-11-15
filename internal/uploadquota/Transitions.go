@@ -264,10 +264,14 @@ func checkCapacity(ledger Ledger, files map[string]models.File, candidate Reserv
 }
 
 func checkCapacityMode(ledger Ledger, files map[string]models.File, candidate Reservation, limits Limits, logicalOnly bool) error {
-	for _, n := range []int64{limits.User.Bytes, limits.User.Files, limits.Request.Bytes, limits.Request.Files, limits.Instance.Bytes, limits.Instance.Files, limits.UserActive, limits.RequestActive, limits.InstanceActive, limits.StagingBytes} {
+	for _, n := range []int64{limits.User.Bytes, limits.User.Files, limits.Request.Bytes, limits.Request.Files, limits.Instance.Bytes, limits.Instance.Files, limits.UserActive, limits.RequestActive, limits.InstanceActive, limits.StagingBytes, limits.UserStagingBytes, limits.RequestStagingBytes} {
 		if n < 0 {
 			return ErrInvalid
 		}
+	}
+	userLimit, requestLimit, err := limits.StagingLimits()
+	if err != nil {
+		return err
 	}
 	snapshot, err := Measure(files)
 	if err != nil {
@@ -280,7 +284,7 @@ func checkCapacityMode(ledger Ledger, files map[string]models.File, candidate Re
 			return ErrInvalid
 		}
 	}
-	var userActive, requestActive, allActive, staging int64
+	var userActive, requestActive, allActive, staging, userStaging, requestStaging int64
 	for id, r := range ledger.Records {
 		if id == candidate.ID {
 			continue
@@ -321,6 +325,13 @@ func checkCapacityMode(ledger Ledger, files map[string]models.File, candidate Re
 				return ErrInvalid
 			}
 			staging += r.StagingBytes
+			// Each subtotal is bounded by the overflow-checked global sum.
+			if r.UserID == candidate.UserID {
+				userStaging += r.StagingBytes
+			}
+			if candidate.RequestID != "" && r.RequestID == candidate.RequestID {
+				requestStaging += r.StagingBytes
+			}
 		}
 	}
 	requested := Usage{Files: 1}
@@ -352,5 +363,37 @@ func checkCapacityMode(ledger Ledger, files map[string]models.File, candidate Re
 	if staging+candidate.StagingBytes > limits.StagingBytes {
 		return ErrStaging
 	}
+	// Older already-bound reservations may exceed the new fair shares. Permit
+	// non-growing retries/progress/completion, but keep their full charge in all
+	// later admissions. A released receipt cannot be used as a grandfather token.
+	old, exists := ledger.Records[candidate.ID]
+	grandfathered := exists && old.BytesKnown && !old.StagingReleased &&
+		old.UserID == candidate.UserID && old.RequestID == candidate.RequestID &&
+		candidate.StagingBytes <= old.StagingBytes
+	if !grandfathered && !limits.AdminStagingExempt {
+		if userStaging+candidate.StagingBytes > userLimit ||
+			(candidate.RequestID != "" && requestStaging+candidate.StagingBytes > requestLimit) {
+			return ErrStaging
+		}
+	}
 	return nil
+}
+
+// StagingLimits resolves optional overrides without an unlimited interpretation.
+// The global budget remains a hard ceiling even with administrator overrides.
+func (l Limits) StagingLimits() (user, request int64, err error) {
+	if l.StagingBytes < 0 || l.UserStagingBytes < 0 || l.RequestStagingBytes < 0 {
+		return 0, 0, ErrInvalid
+	}
+	user, request = l.UserStagingBytes, l.RequestStagingBytes
+	if user == 0 && l.StagingBytes > 0 {
+		user = max(1, l.StagingBytes/2)
+	}
+	if request == 0 && l.StagingBytes > 0 {
+		request = min(user, max(1, l.StagingBytes/4))
+	}
+	if user > l.StagingBytes || request > user {
+		return 0, 0, ErrInvalid
+	}
+	return user, request, nil
 }

@@ -21,7 +21,7 @@ function node(extra = {}) {
 
 function quotaContext(withPanel = true) {
     const nodes = {};
-    for (const id of ['quotaSummary','quotaFiles','quotaBytes','quotaUpdatedAt','quotaStatus','quotaRefresh']) nodes[id] = node();
+    for (const id of ['quotaSummary','quotaFiles','quotaBytes','quotaUpdatedAt','quotaStatus','quotaRefresh','quotaAdminPolicy','quotaOrdinaryLimits']) nodes[id] = node();
     nodes.quotaFiles.textContent = nodes.quotaBytes.textContent = '—';
     nodes.deliveryTitle = node({value:'未完成的交付标题'});
     nodes.deliveryNote = node({value:'不要丢失输入'});
@@ -195,4 +195,21 @@ test('the authenticated quota request and shared panel stay within the two manag
         const source = fs.readFileSync(path.join(templates,file),'utf8');
         assert.equal(source.includes(`template "${sharedName}"`),false,`${file} must not show personal quota`);
     }
+});
+
+
+test('administrator sees ordinary resolved limits, not a personal byte ceiling', () => {
+ const {context,nodes} = quotaContext();
+ const adminPolicy = {userStagingBytes: 2048, requestStagingBytes:1024, globalStagingBytes:4096, ordinaryGlobalBytes:8192, ordinaryRequestBytes:4096};
+ const snapshot = context.quotaSummarySnapshot(summary({adminPolicy}));
+ context.renderQuotaSummary(snapshot);
+ assert.equal(nodes.quotaAdminPolicy.hidden,false);
+ assert.match(nodes.quotaBytes.textContent,/quota.adminUsed/);
+ assert.match(nodes.quotaBytes.title,/quota.adminExemption/);
+ assert.match(nodes.quotaOrdinaryLimits.textContent,/ordinaryLimits.*logicalGlobal.*logicalRequest/);
+ assert.match(nodes.quotaFiles.textContent,/4.*10/);
+ assert.equal(context.quotaSummarySnapshot(summary({adminPolicy:{...adminPolicy,userStagingBytes:0}})),null);
+ context.renderQuotaSummary(context.quotaSummarySnapshot(summary()));
+ assert.equal(nodes.quotaAdminPolicy.hidden,true);
+ assert.match(nodes.quotaBytes.textContent,/1.*KiB.*4.*KiB/);
 });

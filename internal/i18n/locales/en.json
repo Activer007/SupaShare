@@ -732,5 +732,10 @@
   "request.nextPage": "Next page",
   "request.pageHelp": "The count and refresh apply to this page only. Use Next page to view older collections.",
   "request.expiryPolicy": "New requests default to 5 days and must expire within 90 days. Existing deadlines stay unchanged unless edited. Expired invitation credentials are revoked; uploaded files are not automatically deleted. Retained requests count toward the request limit.",
-  "request.invalidExpiryWindow": "Choose a future expiry within 90 days. Existing deadlines may be kept unchanged."
+  "request.invalidExpiryWindow": "Choose a future expiry within 90 days. Existing deadlines may be kept unchanged.",
+  "quota.adminUsed": "{used} used (administrator exempt from cumulative byte quotas)",
+  "quota.ordinaryTitle": "Effective ordinary-user limits (read-only)",
+  "quota.ordinaryLimits": "Per-user cumulative file size: {total}; per-file-request cumulative size: {logicalRequest}; instance logical byte rule: {logicalGlobal} (usage includes administrator files, not only ordinary-user files); file count: {files}; per-user staging: {user}; per-file-request staging: {request}; global physical staging ceiling: {global}.",
+  "quota.adminExemption": "Administrators are exempt from cumulative byte quotas and user/request staging shares. Single-file size, file counts, active-upload counts and the global physical staging ceiling still apply.",
+  "quota.stagingMeaning": "Staging includes reserved processing space, not the maximum size of one file. Automatic settings show resolved limits; 0 does not mean unlimited."
 }

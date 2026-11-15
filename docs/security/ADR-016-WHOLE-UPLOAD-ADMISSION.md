@@ -65,3 +65,7 @@ SQLite schema16、Redis schema9及账本版本不变；无新增数据库字段�
 - 所有 metadata正向增加的原子准入，及实际删除/共享引用的可靠恢复。
 - 启动停止准入时对账 ledger、work/spool、已发布 canonical/S3目标；当前账本不持久化完整目标清单，缺少 chunk不能作为退款证据。关闭重连测试不等于进程崩溃恢复。
 - 本轮Linux runner的SQLite/本地存储路径1GiB明文/2GiB服务器加密HTTP读回及采样峰值已通过；真实Redis持久化、真实S3及完整多路径性能仍OPEN。单进程锁不提供跨实例或外部S3写入者的协调。
+
+## N14 暂存公平份额补充
+
+暂存账本现在同时实施 owner / request 份额，默认由全局的一半 / 四分之一派生，可通过新增环境变量调整。旧已绑定上传保留非增长兼容，所有未释放终态继续占用额度。升级影响、精确大文件边界和配置见 [N14-STAGING-FAIRNESS.md](N14-STAGING-FAIRNESS.md)。

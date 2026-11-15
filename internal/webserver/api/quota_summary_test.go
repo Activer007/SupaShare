@@ -68,6 +68,9 @@ func TestQuotaSummaryLogicalUsageAndSubjectIsolation(t *testing.T) {
 		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &output) != nil || !output.Available || output.UsedBytes != check.bytes || output.UsedFiles != check.files {
 			t.Fatalf("quota output=%s status=%d", w.Body.String(), w.Code)
 		}
+		if (output.AdminPolicy != nil) != (check.key == adminKey.Id) {
+			t.Fatal("admin policy role boundary", w.Body.String())
+		}
 		env := configuration.GetEnvironment()
 		if output.LimitBytes != env.UploadUserTotalMB*(1024*1024) || output.LimitFiles != env.UploadUserMaxFiles || output.AsOf < time.Now().Add(-time.Minute).Unix() {
 			t.Fatal("quota omitted effective limits or completion time")
@@ -138,5 +141,24 @@ func TestQuotaSummaryUnavailableResponseHasNoOptimisticNumbers(t *testing.T) {
 	}
 	if output["ErrorMessage"] != "Quota summary temporarily unavailable" || !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
 		t.Fatal("unavailable response leaked diagnostics or allowed caching")
+	}
+}
+
+func TestQuotaAdminPolicyResolvedAndRoleBounded(t *testing.T) {
+	env := configuration.GetEnvironment()
+	env.UploadStagingMB, env.UploadUserStagingMB, env.UploadRequestStagingMB = 120, 0, 0
+	if quotaPolicyForAdmin(models.User{UserLevel: models.UserLevelUser}, env) != nil {
+		t.Fatal("ordinary user received admin policy")
+	}
+	for _, rank := range []models.UserRank{models.UserLevelAdmin, models.UserLevelSuperAdmin} {
+		policy := quotaPolicyForAdmin(models.User{UserLevel: rank}, env)
+		if policy == nil || policy.UserStagingBytes != 60*1024*1024 || policy.RequestStagingBytes != 30*1024*1024 || policy.GlobalStagingBytes != 120*1024*1024 || policy.OrdinaryGlobalBytes != env.UploadInstanceTotalMB*1024*1024 || policy.OrdinaryRequestBytes != env.UploadRequestTotalMB*1024*1024 {
+			t.Fatalf("incorrect resolved policy: %+v", policy)
+		}
+	}
+	env.UploadUserStagingMB, env.UploadRequestStagingMB = 90, 80
+	policy := quotaPolicyForAdmin(models.User{UserLevel: models.UserLevelAdmin}, env)
+	if policy == nil || policy.UserStagingBytes != 90*1024*1024 || policy.RequestStagingBytes != 80*1024*1024 {
+		t.Fatalf("overrides ignored: %+v", policy)
 	}
 }
