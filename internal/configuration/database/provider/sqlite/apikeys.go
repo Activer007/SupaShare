@@ -128,7 +128,11 @@ func (p DatabaseProvider) UpdateTimeApiKey(apikey models.ApiKey) {
 	_, err := p.sqliteDb.Exec("UPDATE ApiKeys SET LastUsed = ? WHERE Id = ?",
 		apikey.LastUsed, apikey.Id)
 	if err != nil {
-		log.Printf("UpdateTimeApiKey failed for key %s: %v", apikey.Id, err)
+		if apikey.PublicId != "" {
+			log.Printf("UpdateTimeApiKey failed for key %s: %v", apikey.PublicId, err)
+		} else {
+			log.Printf("UpdateTimeApiKey failed: %v", err)
+		}
 	}
 }
 

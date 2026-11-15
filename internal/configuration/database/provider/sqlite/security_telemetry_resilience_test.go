@@ -50,5 +50,6 @@ func TestGCOnClosedDBDoesNotPanic(t *testing.T) {
 	}()
 	p.cleanApiKeys()
 	p.cleanExpiredSessions()
-	p.UpdateTimeApiKey(models.ApiKey{Id: "closed-key", LastUsed: time.Now().Unix()})
+	p.UpdateTimeApiKey(models.ApiKey{Id: "secret-key", PublicId: "pub_123", LastUsed: time.Now().Unix()})
+	p.UpdateTimeApiKey(models.ApiKey{Id: "secret-key-nopub", LastUsed: time.Now().Unix()})
 }

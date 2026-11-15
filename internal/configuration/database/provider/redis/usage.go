@@ -22,6 +22,6 @@ func (p DatabaseProvider) updateUsage(id, field string, timestamp int64) {
 	defer conn.Close()
 	_, err := updateExistingUsage.Do(conn, p.dbPrefix+id, field, timestamp)
 	if err != nil {
-		log.Printf("updateUsage failed for %s (%s): %v", id, field, err)
+		log.Printf("updateUsage failed for field %s: %v", field, err)
 	}
 }
