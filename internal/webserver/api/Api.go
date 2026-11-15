@@ -78,7 +78,7 @@ func Process(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseRequestUrl(r *http.Request) string {
-	return strings.Replace(r.URL.String(), "/api", "", 1)
+	return strings.Replace(r.URL.EscapedPath(), "/api", "", 1)
 }
 
 func apiEditFile(w http.ResponseWriter, r requestParser, user models.User, _ models.ApiKey) {

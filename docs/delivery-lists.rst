@@ -57,7 +57,7 @@ SQLite schema 19 adds the ``DeliveryLists`` table and an owner index. Redis
 schema 11 adds a delivery version marker and a records hash under the configured
 prefix. Records include revoked lists and remain across normal restarts. Existing
 file records and stored content are unchanged. Offline database migration copies
-delivery records, including their order, expiry and revocation state.
+delivery records, including their member order, expiry and revocation state.
 
 Stop the server and back up configuration, the database and stored content before
 upgrading, following the existing backup procedure. Verify existing files and a
@@ -68,3 +68,23 @@ persistence and backup configuration.
 
 This release adds no ZIP bundles, folders, notifications, mobile access, end-to-end
 encrypted lists.
+
+Record budgets and pagination (N12)
+----------------------------------
+
+New lists are limited to 100 stored records per owner and 10,000 server-wide,
+including retained expired/revoked records. Ordinary accounts default to 30 days
+when expiry is blank and cannot request more than 90 days. Administrators may
+still choose no expiry, but have the same record budgets. Existing permanent
+links are preserved.
+
+Expired/revoked lists are retained for seven days, then their list metadata is
+pruned in bounded batches. Original files and ordinary share links are not deleted.
+Back up historical delivery data before upgrading if it must be retained.
+
+Listing returns 50 items by default (maximum 100). Use Load more to see subsequent
+pages; after an uncertain create, inspect all pages before retrying. API clients
+follow the X-Next-Cursor response header using the before query parameter; limit
+is optional. Order is descending creation time, with the opaque token breaking ties.
+Stop old instances before upgrading: Redis builds owner/lifecycle indexes at
+startup, and old writers do not maintain these indexes. Do not mix versions.

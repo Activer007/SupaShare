@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Activer007/SupaShare/internal/configuration"
@@ -76,6 +77,20 @@ func (p *paramDeliveryList) ProcessParameter(r *http.Request) error {
 		return errors.New("GET required")
 	}
 	p.Request = r
+	p.Limit = 50
+	if value := r.URL.Query().Get("limit"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 100 {
+			return errors.New("invalid page size")
+		}
+		p.Limit = n
+	}
+	p.Before = r.URL.Query().Get("before")
+	if p.Before != "" {
+		if _, _, err := models.DecodeDeliveryCursor(p.Before); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -84,6 +99,9 @@ func apiDeliveryCreate(w http.ResponseWriter, parsed requestParser, user models.
 	d, err := delivery.Create(p.Request.Context(), user.Id, p.Input)
 	if err != nil {
 		status, code, message := http.StatusServiceUnavailable, errorcodes.InvalidUserInput, "Delivery temporarily unavailable"
+		if errors.Is(err, models.ErrDeliveryQuota) {
+			status, message = http.StatusTooManyRequests, "Delivery record limit reached; expired and revoked lists remain for seven days"
+		}
 		if errors.Is(err, delivery.ErrInvalid) {
 			status, message = http.StatusBadRequest, "Invalid delivery input"
 		}
@@ -98,10 +116,14 @@ func apiDeliveryCreate(w http.ResponseWriter, parsed requestParser, user models.
 
 func apiDeliveryList(w http.ResponseWriter, parsed requestParser, user models.User, _ models.ApiKey) {
 	p := parsed.(*paramDeliveryList)
-	list, err := database.ListDeliveries(p.Request.Context(), user.Id)
+	list, err := database.ListDeliveriesPage(p.Request.Context(), user.Id, p.Before, p.Limit+1)
 	if err != nil {
 		sendError(w, http.StatusServiceUnavailable, errorcodes.InvalidUserInput, "Delivery temporarily unavailable")
 		return
+	}
+	if len(list) > p.Limit {
+		list = list[:p.Limit]
+		w.Header().Set("X-Next-Cursor", models.EncodeDeliveryCursor(list[len(list)-1]))
 	}
 	output := make([]deliveryOutput, 0, len(list))
 	for _, d := range list {

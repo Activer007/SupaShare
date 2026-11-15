@@ -21,3 +21,14 @@ func ListDeliveries(ctx context.Context, ownerID int) ([]models.Delivery, error)
 func RevokeDelivery(ctx context.Context, token string, ownerID int, now int64) (bool, error) {
 	return db.RevokeDelivery(ctx, token, ownerID, now)
 }
+
+// CreateDeliveryLimited is the online admission path; InsertDelivery is reserved for offline migration.
+func CreateDeliveryLimited(ctx context.Context, d models.Delivery, now int64) (bool, error) {
+	return db.CreateDeliveryLimited(ctx, d, now)
+}
+func ListDeliveriesPage(ctx context.Context, ownerID int, before string, limit int) ([]models.Delivery, error) {
+	return db.ListDeliveriesPage(ctx, ownerID, before, limit)
+}
+func PruneDeliveries(ctx context.Context, now int64, limit int) (int, error) {
+	return db.PruneDeliveries(ctx, now, limit)
+}

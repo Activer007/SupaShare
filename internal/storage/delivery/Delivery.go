@@ -63,6 +63,18 @@ func Create(ctx context.Context, ownerID int, input Input) (models.Delivery, err
 		return models.Delivery{}, ErrInvalid
 	}
 	now := time.Now().Unix()
+	owner, found := database.GetUser(ownerID)
+	if !found || !authorization.CanGrantAPI(owner, models.ApiPermUpload) {
+		return models.Delivery{}, ErrInvalid
+	}
+	if !owner.IsAdmin() {
+		if input.ExpiresAt == 0 {
+			input.ExpiresAt = now + models.DeliveryDefaultLifetime
+		}
+		if input.ExpiresAt > now+models.DeliveryMaxLifetime {
+			return models.Delivery{}, ErrInvalid
+		}
+	}
 	input.Title, input.Note = strings.TrimSpace(input.Title), strings.TrimSpace(input.Note)
 	if input.Title == "" || utf8.RuneCountInString(input.Title) > 200 || utf8.RuneCountInString(input.Note) > 2000 ||
 		len(input.FileIDs) < 2 || len(input.FileIDs) > MaxFiles || input.ExpiresAt < 0 || (input.ExpiresAt > 0 && input.ExpiresAt <= now) {
@@ -101,7 +113,7 @@ func Create(ctx context.Context, ownerID int, input Input) (models.Delivery, err
 			return models.Delivery{}, err
 		}
 		d.Token = base64.RawURLEncoding.EncodeToString(entropy[:])
-		inserted, err := database.InsertDelivery(ctx, d)
+		inserted, err := database.CreateDeliveryLimited(ctx, d, now)
 		if err != nil {
 			return models.Delivery{}, err
 		}
