@@ -57,3 +57,7 @@ go test -race -tags test,noaws ./internal/configuration/database/provider/redis 
 ```
 
 本地尚未覆盖全仓回归、其他浏览器／视口、真实 Redis 故障转移／断电、多应用进程混合负载、浏览器下载文件最终落盘、批量旧链接处置及生产部署。旧链接的既有风险由其原权限和有效期决定。N13 的全量 webserver 失败记录仍由对应 PR 保留，Actions 当前关闭。此次长度样本只用于核对生成路径和格式。
+
+## PR 自动审查修复
+
+PR #110 首轮 Auto Review 指出配置加载测试仍断言旧的 20 字符配置原样保留。将预期同步为 `environment.MinGeneratedIdLength`，继续用输入 20 验证提升至下限，同时保留热链配置 25 按原值加载的断言。本地只运行受影响的 `go test -tags test,noaws ./internal/configuration -run '^TestLoad$' -count=1`，结果通过。该次修复仅调整测试预期，前述独立与组合应用代码验证对应相同生产源码。

@@ -35,7 +35,7 @@ func TestLoad(t *testing.T) {
 	_ = os.Setenv("GOKAPI_LENGTH_ID", "20")
 	_ = os.Setenv("GOKAPI_LENGTH_HOTLINK_ID", "25")
 	Load()
-	test.IsEqualInt(t, parsedEnvironment.LengthId, 20)
+	test.IsEqualInt(t, parsedEnvironment.LengthId, environment.MinGeneratedIdLength)
 	test.IsEqualInt(t, parsedEnvironment.LengthHotlinkId, 25)
 	_ = os.Unsetenv("GOKAPI_LENGTH_ID")
 	_ = os.Unsetenv("GOKAPI_LENGTH_HOTLINK_ID")
