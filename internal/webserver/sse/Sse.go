@@ -19,22 +19,46 @@ var mutex = sync.RWMutex{}
 var maxConnection = 2 * time.Hour
 var pingInterval = 15 * time.Second
 
+const (
+	MaxConnectionsPerUser = 10
+	MaxTotalConnections   = 500
+)
+
 type listener struct {
 	Reply    func(reply string)
 	Shutdown func()
 	UserId   int
 }
 
-func addListener(id string, channel listener) {
+func addListener(id string, channel listener) bool {
 	mutex.Lock()
+	defer mutex.Unlock()
+	if len(listeners) >= MaxTotalConnections {
+		return false
+	}
+	userCount := 0
+	for _, l := range listeners {
+		if l.UserId == channel.UserId {
+			userCount++
+		}
+	}
+	if userCount >= MaxConnectionsPerUser {
+		return false
+	}
 	listeners[id] = channel
-	mutex.Unlock()
+	return true
 }
 
 func removeListener(id string) {
 	mutex.Lock()
 	delete(listeners, id)
 	mutex.Unlock()
+}
+
+func flushResponse(w http.ResponseWriter) {
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 type eventFileDownload struct {
@@ -146,7 +170,13 @@ func GetStatusSSE(w http.ResponseWriter, r *http.Request) {
 		UserId: user.Id,
 	}
 	channelId := helper.GenerateRandomString(20)
-	addListener(channelId, channel)
+	if !addListener(channelId, channel) {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"Result":"error","ErrorMessage":"Too many active SSE connections"}`))
+		return
+	}
+	defer removeListener(channelId)
 
 	for _, status := range pstatusdb.GetAllForUser(user.Id) {
 		event := eventUploadStatus{
@@ -162,15 +192,14 @@ func GetStatusSSE(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = io.WriteString(w, "event: message\ndata: "+string(message)+"\n\n")
 	}
-	w.(http.Flusher).Flush()
+	flushResponse(w)
 
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 
 	for {
 		if time.Now().After(creationTime.Add(maxConnection)) {
-			removeListener(channelId)
-			w.(http.Flusher).Flush()
+			flushResponse(w)
 			return
 		}
 		select {
@@ -179,12 +208,10 @@ func GetStatusSSE(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			_, _ = io.WriteString(w, "event: ping\n\n")
 		case <-ctx.Done():
-			removeListener(channelId)
 			return
 		case <-shutdownChannel:
-			removeListener(channelId)
 			return
 		}
-		w.(http.Flusher).Flush()
+		flushResponse(w)
 	}
 }

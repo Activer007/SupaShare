@@ -12,11 +12,11 @@ Start sharing quickly, let contributors submit through a collection link without
 and deliver multiple files through one list with individual downloads for a convenient handoff.
 English and Simplified Chinese are built in.
 
-**Source version 2.18.0** (not yet released) · Published Linux **amd64/arm64** server binaries and checksums:
+**Source version 2.19.0** (not yet released) · Published Linux **amd64/arm64** server binaries and checksums:
 [Releases, currently v2.16.0](https://github.com/Activer007/SupaShare/releases).
 Docker deployments build the image from this repository.
 
-This source update summarizes security changes merged on 2026-11-13–14. Read the [2.18.0 upgrade notes](docs/releases/2.18.0.md#upgrade-notes-english) before upgrading. Existing sessions require a new login, and rollback requires a compatible pre-upgrade database. Existing OIDC users need verified identity bindings. Non-loopback OIDC requires HTTPS, S256 PKCE, an ID token nonce and callbacks to the same process. The unmerged group E upload changes are not included.
+This source update summarizes security hardening and deep vulnerability remediation merged on 2026-11-14–15 (PRs #114–#119). Read the [2.19.0 upgrade notes](docs/releases/2.19.0.md#upgrade-notes-english) before upgrading. Key fixes resolve async chunk assembly goroutine panics, SSE upload status stream resource exhaustion, API rate limiting decoupling from legitimate automation, File Request cascade deletion safeguards, and telemetry log sanitization. No new database migration is required.
 
 [Quick start](#quick-start) · [Screenshots](#screenshots) · [Documentation](#documentation)
 

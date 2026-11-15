@@ -2,6 +2,7 @@ package sse
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -319,4 +320,34 @@ func TestGetStatusSSE(t *testing.T) {
 		Shutdown()
 		<-done
 	})
+}
+
+func TestMaxConnectionsPerUserLimit(t *testing.T) {
+	mutex.Lock()
+	listeners = make(map[string]listener)
+	mutex.Unlock()
+
+	uid := 999
+	for i := 0; i < MaxConnectionsPerUser; i++ {
+		ok := addListener(fmt.Sprintf("chan-%d", i), listener{UserId: uid})
+		if !ok {
+			t.Fatalf("expected addListener to succeed for connection %d", i)
+		}
+	}
+	// 11th connection for same user must be rejected
+	ok := addListener("chan-exceeded", listener{UserId: uid})
+	if ok {
+		t.Fatal("expected addListener to fail when MaxConnectionsPerUser is reached")
+	}
+
+	// Another user should still be able to connect
+	okAnother := addListener("chan-another-user", listener{UserId: uid + 1})
+	if !okAnother {
+		t.Fatal("expected addListener to succeed for a different user")
+	}
+
+	// Clean up
+	mutex.Lock()
+	listeners = make(map[string]listener)
+	mutex.Unlock()
 }
