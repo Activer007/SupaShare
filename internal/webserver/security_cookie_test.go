@@ -49,7 +49,7 @@ func TestSEC012PasswordChangeRevokesSessions(t *testing.T) {
 	}
 	database.SaveSession("sec012-different-owner", models.Session{UserId: user.Id + 1, ValidUntil: time.Now().Add(time.Hour).Unix()})
 	t.Cleanup(func() { database.DeleteSession("sec012-different-owner") })
-	invalidForm := url.Values{"newpw": {"synthetic-new-password-123"}, "csrf-token": {"invalid"}}
+	invalidForm := url.Values{"newpw": {"synthetic-new-password-123"}, "newpw_c": {"synthetic-new-password-123"}, "csrf-token": {"invalid"}}
 	invalid := httptest.NewRequest(http.MethodPost, "/changePassword", strings.NewReader(invalidForm.Encode()))
 	invalid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	changePassword(httptest.NewRecorder(), authentication.SetUserInRequest(invalid, user))
@@ -60,7 +60,7 @@ func TestSEC012PasswordChangeRevokesSessions(t *testing.T) {
 	if _, exists := database.GetSession("sec012-current"); !exists {
 		t.Fatal("invalid form revoked session")
 	}
-	form := url.Values{"newpw": {"synthetic-new-password-123"}, "csrf-token": {csrftoken.GenerateBound(csrftoken.TypePasswordChange, sec023LegacyTestBinding)}}
+	form := url.Values{"newpw": {"synthetic-new-password-123"}, "newpw_c": {"synthetic-new-password-123"}, "csrf-token": {csrftoken.GenerateBound(csrftoken.TypePasswordChange, sec023LegacyTestBinding)}}
 	r := httptest.NewRequest(http.MethodPost, "/changePassword", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(&http.Cookie{Name: "session_token", Value: "sec012-current"})
@@ -77,7 +77,7 @@ func TestSEC012PasswordChangeRevokesSessions(t *testing.T) {
 			t.Errorf("old session survives password change: %s", id)
 		}
 	}
-	if w.Code != http.StatusTemporaryRedirect || w.Header().Get("Location") != "/login" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login?passwordChanged=1" {
 		t.Error("password change must require a fresh login")
 	}
 	if _, exists := database.GetSession("sec012-different-owner"); !exists {

@@ -5,6 +5,7 @@
 <div id="container" class="public-panel login-form-panel">
   <h1 id="loginTitle">{{.UI.T "page.login"}}</h1>
   <p>{{.UI.T "login.help"}}</p>
+  {{if .PasswordChanged}}<p id="passwordChanged" class="alert alert-success text-start" role="status">{{.UI.T "password.changed"}}</p>{{end}}
   <form method="post" action="./login" id="form" name="form" onsubmit="return submitForm()" {{if .IsFailedLogin}}aria-describedby="loginError"{{end}}>
     <div class="mb-3">
       <label class="form-label" for="username">{{.UI.T "login.username"}}</label>

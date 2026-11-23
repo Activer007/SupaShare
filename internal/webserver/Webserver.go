@@ -39,6 +39,7 @@ import (
 	"github.com/Activer007/SupaShare/internal/storage/presign"
 	"github.com/Activer007/SupaShare/internal/webserver/api"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication"
+	"github.com/Activer007/SupaShare/internal/webserver/authentication/admission"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/csrftoken"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/downloadPasswordToken"
 	"github.com/Activer007/SupaShare/internal/webserver/authentication/oauth"
@@ -395,43 +396,31 @@ func handleGenerateAuthToken(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("{\"key\":\"" + token + "\",\"expiry\":" + strconv.FormatInt(expiry, 10) + "}"))
 }
 
+// Keep password changes from starting an unbounded number of memory-hard hashes.
+// Admission is immediate, with no waiting queue and no per-user mutable state.
+var passwordChangeWork = make(chan struct{}, 2)
+
 // Handling of /changePassword
 func changePassword(w http.ResponseWriter, r *http.Request) {
-	var errMessage string
+	addNoCacheHeader(w)
+	if configuration.Get().Authentication.Method != models.AuthenticationInternal {
+		http.Error(w, "Password changes require internal authentication", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	user, err := authentication.GetUserFromRequest(r)
 	if err != nil {
 		panic(err)
 	}
-	if !user.ResetPassword {
-		redirect(w, r, "admin")
-		return
-	}
-	err = r.ParseForm()
-	if err != nil {
-		fmt.Println("Invalid form data sent to server for /changePassword")
-		fmt.Println(err)
-		errMessage = "password.incomplete"
-	} else {
-		var ok bool
-		var pwHash string
-
-		pw := r.PostForm.Get("newpw")
-		csrf := r.PostForm.Get("csrf-token")
-		validCsrf := pw != "" && csrftoken.IsValidBound(csrftoken.TypePasswordChange, csrf, browserCSRFBinding(r))
-		pwHash, ok, err = validateNewPassword(pw, user, validCsrf)
-		if err != nil {
-			errMessage = err.Error()
-		}
-		if ok {
-			updated, updateErr := database.UpdateUserResetCredentials(user, pwHash, false)
-			if updateErr != nil || !updated {
-				sessionmanager.LogoutSession(w, r)
-				redirect(w, r, "login")
-				return
-			}
-			database.DeleteAllSessionsByUser(user.Id)
-			sessionmanager.LogoutSession(w, r)
-			redirect(w, r, "login")
+	var errMessage string
+	if r.Method == http.MethodPost {
+		var handled bool
+		errMessage, handled = submitPasswordChange(w, r, user)
+		if handled {
 			return
 		}
 	}
@@ -442,32 +431,90 @@ func changePassword(w http.ResponseWriter, r *http.Request) {
 	config := configuration.Get()
 	err = renderPage(w, r, "changepw",
 		&genericView{PublicName: config.PublicName,
-			MinPasswordLength: configuration.GetEnvironment().MinLengthPassword,
-			ErrorMessage:      errMessage,
-			CustomContent:     customStaticInfo,
-			CsrfToken:         token})
+			MinPasswordLength:      configuration.GetEnvironment().MinLengthPassword,
+			IsForcedPasswordChange: user.ResetPassword,
+			ErrorMessage:           errMessage,
+			CustomContent:          customStaticInfo,
+			CsrfToken:              token})
 	helper.CheckIgnoreTimeout(err)
 }
 
-// validateNewPassword validates the new password and returns the new password hash if the password is valid.
-// If the password is not valid, it returns an error message and an empty string.
-// If the password is valid, it returns the hash as a string and true.
-func validateNewPassword(newPassword string, user models.User, validCsrf bool) (string, bool, error) {
-	if len(newPassword) == 0 {
-		return user.Password, false, nil
+// submitPasswordChange returns a fixed error key for redisplaying the form.
+// handled is true once a response was written or the request was canceled.
+func submitPasswordChange(w http.ResponseWriter, r *http.Request, user models.User) (message string, handled bool) {
+	if !admission.Allow(r, admission.PasswordChange) {
+		admission.Reject(w)
+		return "", true
 	}
-	if !validCsrf {
-		return "", false, errors.New("password.incomplete")
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := r.ParseForm(); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "Password form is too large", http.StatusRequestEntityTooLarge)
+			return "", true
+		}
+		return "password.incomplete", false
 	}
+	pw := r.PostForm.Get("newpw")
+	confirmation := r.PostForm.Get("newpw_c")
+	currentPassword := r.PostForm.Get("currentpw")
+	validCsrf := csrftoken.IsValidBound(csrftoken.TypePasswordChange, r.PostForm.Get("csrf-token"), browserCSRFBinding(r))
+	if !validCsrf || pw == "" || confirmation == "" || (!user.ResetPassword && currentPassword == "") {
+		return "password.incomplete", false
+	}
+	if pw != confirmation {
+		return "password.mismatch", false
+	}
+	if err := ratelimiter.WaitOnLogin(r.Context(), logging.GetIpAddress(r)); err != nil {
+		return "", true
+	}
+	select {
+	case passwordChangeWork <- struct{}{}:
+		defer func() { <-passwordChangeWork }()
+	default:
+		admission.Reject(w)
+		return "", true
+	}
+	if r.Context().Err() != nil {
+		return "", true
+	}
+	if !user.ResetPassword {
+		validCurrent, _ := configuration.VerifyPassword(currentPassword, user.Password, configuration.Get().Authentication.SaltAdmin)
+		if !validCurrent {
+			return "password.currentIncorrect", false
+		}
+	}
+	pwHash, err := validateNewPassword(pw, user)
+	if err != nil {
+		return err.Error(), false
+	}
+	if r.Context().Err() != nil {
+		return "", true
+	}
+	updated, err := database.UpdateUserResetCredentials(user, pwHash, false)
+	if err != nil || !updated {
+		sessionmanager.LogoutSession(w, r)
+		http.Redirect(w, r, "login", http.StatusSeeOther)
+		return "", true
+	}
+	database.DeleteAllSessionsByUser(user.Id)
+	sessionmanager.LogoutSession(w, r)
+	http.Redirect(w, r, "login?passwordChanged=1", http.StatusSeeOther)
+	return "", true
+}
+
+// validateNewPassword checks password policy after the form and CSRF validation,
+// returning either its hash or a fixed error key.
+func validateNewPassword(newPassword string, user models.User) (string, error) {
 	if len(newPassword) < configuration.GetEnvironment().MinLengthPassword {
-		return "", false, errors.New("password.tooShort")
+		return "", errors.New("password.tooShort")
 	}
-	isSame, _ := configuration.VerifyPassword(newPassword, user.Password, "")
+	isSame, _ := configuration.VerifyPassword(newPassword, user.Password, configuration.Get().Authentication.SaltAdmin)
 	if isSame {
-		return "", false, errors.New("password.unchanged")
+		return "", errors.New("password.unchanged")
 	}
 	newPasswordHash := configuration.HashPassword(newPassword, false, "")
-	return newPasswordHash, true, nil
+	return newPasswordHash, nil
 }
 
 func firstLetterUpper(s string) string {
@@ -657,13 +704,14 @@ func showLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = renderPage(w, r, "login", &LoginView{
-		IsFailedLogin: failedLogin,
-		IsFailedCsfr:  failedCsrf,
-		User:          user,
-		IsAdminView:   false,
-		PublicName:    configuration.Get().PublicName,
-		CustomContent: customStaticInfo,
-		CsrfToken:     token,
+		IsFailedLogin:   failedLogin,
+		PasswordChanged: r.Method == http.MethodGet && r.URL.Query().Get("passwordChanged") == "1",
+		IsFailedCsfr:    failedCsrf,
+		User:            user,
+		IsAdminView:     false,
+		PublicName:      configuration.Get().PublicName,
+		CustomContent:   customStaticInfo,
+		CsrfToken:       token,
 	})
 	helper.CheckIgnoreTimeout(err)
 }
@@ -671,14 +719,15 @@ func showLogin(w http.ResponseWriter, r *http.Request) {
 // LoginView contains variables for the login template
 type LoginView struct {
 	pageView
-	IsFailedLogin  bool
-	IsFailedCsfr   bool
-	IsAdminView    bool
-	IsDownloadView bool
-	User           string
-	PublicName     string
-	CsrfToken      string
-	CustomContent  customStatic
+	PasswordChanged bool
+	IsFailedLogin   bool
+	IsFailedCsfr    bool
+	IsAdminView     bool
+	IsDownloadView  bool
+	User            string
+	PublicName      string
+	CsrfToken       string
+	CustomContent   customStatic
 }
 
 // Handling of /d
@@ -1331,6 +1380,11 @@ func requireLogin(next http.HandlerFunc, isUiCall, isPwChangeView bool) http.Han
 			_, _ = io.WriteString(w, "{\"Result\":\"error\",\"ErrorMessage\":\"Not authenticated\"}")
 			return
 		}
+		if isPwChangeView {
+			// Never replay a submitted password form as a POST to the login page.
+			http.Redirect(w, r, "login", http.StatusSeeOther)
+			return
+		}
 		redirect(w, r, "login")
 	}
 }
@@ -1389,19 +1443,20 @@ func addCacheHeader(w http.ResponseWriter) {
 // A view containing parameters for a generic template
 type genericView struct {
 	pageView
-	IsAdminView       bool
-	IsDownloadView    bool
-	IsGenericError    bool
-	PublicName        string
-	RedirectUrl       string
-	ErrorTitle        string
-	ErrorMessage      string
-	ErrorOauthMessage string
-	CsrfToken         string
-	ErrorCardWidth    string
-	ErrorId           int
-	MinPasswordLength int
-	CustomContent     customStatic
+	IsAdminView            bool
+	IsDownloadView         bool
+	IsGenericError         bool
+	PublicName             string
+	RedirectUrl            string
+	ErrorTitle             string
+	ErrorMessage           string
+	ErrorOauthMessage      string
+	CsrfToken              string
+	ErrorCardWidth         string
+	ErrorId                int
+	MinPasswordLength      int
+	IsForcedPasswordChange bool
+	CustomContent          customStatic
 }
 
 // A view containing parameters for an oauth error

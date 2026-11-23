@@ -263,6 +263,23 @@ generate another temporary password; existing user lists cannot reveal it.
 OIDC and header-authenticated accounts continue to sign in through their
 configured identity provider rather than receiving an internal password.
 
+Changing Your Own Password
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+With internal authentication, open the account menu at the top right and choose
+**Change Password**. All users, including administrators and the Super Admin, can
+change their own password here without user-management permissions.
+
+Enter your current password, a new password and its confirmation. A successful
+change signs out all browser sessions for your account; sign in again with the
+new password. Existing long-lived API keys are not automatically rotated or
+revoked. Revoke or replace those keys separately if needed.
+
+The mandatory change after first login or an administrator's reset uses the same
+page and asks only for the new password and confirmation. OIDC and header-based
+authentication use the configured identity provider; change your password there
+rather than in SupaShare.
+
 Resetting Passwords
 ^^^^^^^^^^^^^^^^^^^^
 If using internal authentication, click the *Key* icon:
