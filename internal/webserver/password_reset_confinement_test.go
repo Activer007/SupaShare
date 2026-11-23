@@ -197,17 +197,22 @@ func TestPasswordResetConfinementHTTP(t *testing.T) {
 		t.Fatal("reset-required logout blocked")
 	}
 	session = login("synthetic-old-password")
-	res, _ = request("/changePassword", nil, session, nil)
-	if res.StatusCode != http.StatusOK {
-		t.Fatal("password form blocked")
+	res, body = request("/changePassword", nil, session, nil)
+	if res.StatusCode != http.StatusOK || strings.Contains(body, `name="currentpw"`) {
+		t.Fatal("forced password form did not render without a current-password field")
 	}
-	res, _ = request("/changePassword", url.Values{"newpw": {"synthetic-new-password"}, "csrf-token": {"invalid"}}, session, nil)
+	res, _ = request("/changePassword", url.Values{"newpw": {"synthetic-new-password"}, "newpw_c": {"synthetic-new-password"}, "csrf-token": {"invalid"}}, session, nil)
 	stored, _ = database.GetUser(user.Id)
 	if !stored.ResetPassword {
 		t.Fatal("bad CSRF cleared reset")
 	}
-	res, body = request("/changePassword", url.Values{"newpw": {"synthetic-new-password"}, "csrf-token": {csrftoken.GenerateBound(csrftoken.TypePasswordChange, sec023LegacyTestBinding)}}, session, nil)
-	if res.StatusCode != http.StatusTemporaryRedirect {
+	res, _ = request("/changePassword", url.Values{"newpw": {"synthetic-new-password"}, "newpw_c": {"different-synthetic-password"}, "csrf-token": {csrftoken.GenerateBound(csrftoken.TypePasswordChange, sec023LegacyTestBinding)}}, session, nil)
+	stored, _ = database.GetUser(user.Id)
+	if res.StatusCode != http.StatusOK || !stored.ResetPassword || stored.Password != user.Password {
+		t.Fatal("mismatched passwords changed forced reset credentials")
+	}
+	res, body = request("/changePassword", url.Values{"newpw": {"synthetic-new-password"}, "newpw_c": {"synthetic-new-password"}, "csrf-token": {csrftoken.GenerateBound(csrftoken.TypePasswordChange, sec023LegacyTestBinding)}}, session, nil)
+	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/login?passwordChanged=1" {
 		t.Fatalf("password change: %d %s", res.StatusCode, body)
 	}
 	stored, _ = database.GetUser(user.Id)

@@ -75,7 +75,10 @@
               <button class="btn workspace-user dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="{{.UI.T "nav.account"}}" title="{{if .IsUserTabAvailable}}{{.ActiveUser.Name}}{{else}}{{.UI.T "nav.account"}}{{end}}">
                 <i class="bi bi-person" aria-hidden="true"></i><span>{{if .IsUserTabAvailable}}{{.ActiveUser.Name}}{{else}}{{.UI.T "nav.account"}}{{end}}</span>
               </button>
-              <ul class="dropdown-menu dropdown-menu-end" data-bs-theme="dark"><li><button type="button" class="dropdown-item" onclick="doLogout()">{{.UI.T "nav.logout"}}</button></li></ul>
+              <ul class="dropdown-menu dropdown-menu-end" data-bs-theme="dark">
+                {{if .IsInternalAuth}}<li><a class="dropdown-item" href="./changePassword">{{.UI.T "page.changepw"}}</a></li>{{end}}
+                <li><button type="button" class="dropdown-item" onclick="doLogout()">{{.UI.T "nav.logout"}}</button></li>
+              </ul>
             </div>
             {{else if .IsUserTabAvailable}}<span class="workspace-user" title="{{.ActiveUser.Name}}"><i class="bi bi-person" aria-hidden="true"></i><span>{{.ActiveUser.Name}}</span></span>{{end}}
           </div>
